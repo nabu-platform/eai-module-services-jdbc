@@ -1,12 +1,15 @@
 package nabu.services.jdbc;
 
+import javax.jws.WebParam;
+import javax.jws.WebResult;
 import javax.jws.WebService;
 
 import nabu.services.jdbc.types.Paging;
 
 @WebService
 public class Services {
-	public Paging paging(Integer limit, Integer maxLimit, Integer offset, Integer maxOffset) {
+	@WebResult(name = "paging")
+	public Paging paging(@WebParam(name = "limit") Integer limit, @WebParam(name = "maxLimit") Integer maxLimit, @WebParam(name = "offset") Integer offset, @WebParam(name = "maxOffset") Integer maxOffset) {
 		if (limit == null) {
 			limit = maxLimit;
 		}
