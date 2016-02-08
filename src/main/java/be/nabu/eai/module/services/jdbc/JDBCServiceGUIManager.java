@@ -2,12 +2,14 @@ package be.nabu.eai.module.services.jdbc;
 
 import java.io.IOException;
 import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.event.EventHandler;
-import javafx.fxml.FXMLLoader;
 import javafx.geometry.Orientation;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
@@ -28,9 +30,11 @@ import javafx.scene.layout.VBox;
 import be.nabu.eai.developer.MainController;
 import be.nabu.eai.developer.api.ArtifactGUIInstance;
 import be.nabu.eai.developer.api.ArtifactGUIManager;
-import be.nabu.eai.developer.controllers.NameOnlyCreateController;
 import be.nabu.eai.developer.managers.ServiceGUIManager;
 import be.nabu.eai.developer.managers.util.ElementMarshallable;
+import be.nabu.eai.developer.managers.util.SimpleProperty;
+import be.nabu.eai.developer.managers.util.SimplePropertyUpdater;
+import be.nabu.eai.developer.util.EAIDeveloperUtils;
 import be.nabu.eai.developer.util.ElementSelectionListener;
 import be.nabu.eai.developer.util.ElementTreeItem;
 import be.nabu.eai.repository.EAIRepositoryUtils;
@@ -42,6 +46,7 @@ import be.nabu.eai.repository.resources.RepositoryEntry;
 import be.nabu.jfx.control.tree.Tree;
 import be.nabu.jfx.control.tree.TreeItem;
 import be.nabu.libs.artifacts.api.Artifact;
+import be.nabu.libs.property.api.Property;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.api.DataSourceProviderArtifact;
 import be.nabu.libs.types.TypeUtils;
@@ -86,20 +91,20 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 
 	@Override
 	public ArtifactGUIInstance create(final MainController controller, final TreeItem<Entry> target) throws IOException {
-		FXMLLoader loader = controller.load("new.nameOnly.fxml", "Create JDBC Service", true);
-		final NameOnlyCreateController createController = loader.getController();
+		List<Property<?>> properties = new ArrayList<Property<?>>();
+		properties.add(new SimpleProperty<String>("Name", String.class, true));
+		final SimplePropertyUpdater updater = new SimplePropertyUpdater(true, new LinkedHashSet<Property<?>>(properties));
 		final JDBCServiceGUIInstance instance = new JDBCServiceGUIInstance(this);
-		createController.getBtnCreate().addEventHandler(MouseEvent.MOUSE_CLICKED, new EventHandler<MouseEvent>() {
+		EAIDeveloperUtils.buildPopup(controller, updater, "Create JDBC Service", new EventHandler<MouseEvent>() {
 			@Override
 			public void handle(MouseEvent arg0) {
 				try {
-					String name = createController.getTxtName().getText();
+					String name = updater.getValue("Name");
 					RepositoryEntry entry = ((RepositoryEntry) target.itemProperty().get()).createNode(name, getArtifactManager(), true);
 					JDBCService service = new JDBCService(entry.getId());
 					getArtifactManager().save(entry, service);
 					entry.getRepository().reload(target.itemProperty().get().getId());
 					controller.getRepositoryBrowser().refresh();
-					createController.close();
 					Tab tab = controller.newTab(entry.getId(), instance);
 					AnchorPane pane = new AnchorPane();
 					tab.setContent(pane);
