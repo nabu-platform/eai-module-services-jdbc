@@ -208,8 +208,8 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 			if (artifact.isInputGenerated() && TypeUtils.getAllChildren(artifact.getParameters()).size() > 0) {
 				isLeaf = false;
 				EAINode node = new EAINode();
-				node.setArtifactClass(DefinedType.class);
-				node.setArtifact((DefinedType) artifact.getParameters());
+				node.setArtifactClass(DefinedStructure.class);
+				node.setArtifact((DefinedStructure) artifact.getParameters());
 				node.setLeaf(true);
 				Entry parameters = new MemoryEntry(parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.PARAMETERS, JDBCService.PARAMETERS);
 				// need to explicitly set id (it was loaded from file)
@@ -221,8 +221,8 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 			if (artifact.isOutputGenerated() && TypeUtils.getAllChildren(artifact.getResults()).size() > 0) {
 				isLeaf = false;
 				EAINode node = new EAINode();
-				node.setArtifactClass(DefinedType.class);
-				node.setArtifact((DefinedType) artifact.getResults());
+				node.setArtifactClass(DefinedStructure.class);
+				node.setArtifact((DefinedStructure) artifact.getResults());
 				node.setLeaf(true);
 				Entry results = new MemoryEntry(parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.RESULTS, JDBCService.RESULTS);
 				((DefinedStructure) artifact.getResults()).setId(results.getId());
