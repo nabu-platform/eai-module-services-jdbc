@@ -21,7 +21,6 @@ import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.ImageView;
-import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
@@ -95,9 +94,9 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		properties.add(new SimpleProperty<String>("Name", String.class, true));
 		final SimplePropertyUpdater updater = new SimplePropertyUpdater(true, new LinkedHashSet<Property<?>>(properties));
 		final JDBCServiceGUIInstance instance = new JDBCServiceGUIInstance(this);
-		EAIDeveloperUtils.buildPopup(controller, updater, "Create JDBC Service", new EventHandler<MouseEvent>() {
+		EAIDeveloperUtils.buildPopup(controller, updater, "Create JDBC Service", new EventHandler<ActionEvent>() {
 			@Override
-			public void handle(MouseEvent arg0) {
+			public void handle(ActionEvent arg0) {
 				try {
 					String name = updater.getValue("Name");
 					RepositoryEntry entry = ((RepositoryEntry) target.itemProperty().get()).createNode(name, getArtifactManager(), true);
