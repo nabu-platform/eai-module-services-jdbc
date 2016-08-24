@@ -266,6 +266,8 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 		}
 		references.addAll(StructureManager.getComplexReferences(artifact.getInput()));
 		references.addAll(StructureManager.getComplexReferences(artifact.getOutput()));
+		// a "null" reference can be injected if an parameters/result document is empty because it does exist in the representation but is not actually added to the repository tree to avoid clutter
+		references.remove(null);
 		return references;
 	}
 
