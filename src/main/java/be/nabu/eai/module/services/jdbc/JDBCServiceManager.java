@@ -10,8 +10,10 @@ import javax.xml.bind.annotation.XmlRootElement;
 
 import be.nabu.eai.module.types.structure.StructureManager;
 import be.nabu.eai.repository.EAINode;
+import be.nabu.eai.repository.EAIRepositoryUtils;
 import be.nabu.eai.repository.api.ArtifactManager;
 import be.nabu.eai.repository.api.ArtifactRepositoryManager;
+import be.nabu.eai.repository.api.BrokenReferenceArtifactManager;
 import be.nabu.eai.repository.api.Entry;
 import be.nabu.eai.repository.api.ModifiableEntry;
 import be.nabu.eai.repository.api.ModifiableNodeEntry;
@@ -24,6 +26,7 @@ import be.nabu.libs.resources.ResourceWritableContainer;
 import be.nabu.libs.resources.api.ManageableContainer;
 import be.nabu.libs.resources.api.ReadableResource;
 import be.nabu.libs.resources.api.Resource;
+import be.nabu.libs.resources.api.ResourceContainer;
 import be.nabu.libs.resources.api.WritableResource;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.types.TypeUtils;
@@ -44,7 +47,7 @@ import be.nabu.utils.io.api.ByteBuffer;
 import be.nabu.utils.io.api.ReadableContainer;
 import be.nabu.utils.io.api.WritableContainer;
 
-public class JDBCServiceManager implements ArtifactManager<JDBCService>, ArtifactRepositoryManager<JDBCService> {
+public class JDBCServiceManager implements ArtifactManager<JDBCService>, ArtifactRepositoryManager<JDBCService>, BrokenReferenceArtifactManager<JDBCService> {
 
 	@Override
 	public JDBCService load(ResourceEntry entry, List<Validation<?>> messages) throws IOException, ParseException {
@@ -300,6 +303,16 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 			else {
 				artifact.setResults((ComplexType) newType);
 			}
+		}
+		return messages;
+	}
+
+	@Override
+	public List<Validation<?>> updateBrokenReference(ResourceContainer<?> container, String from, String to) throws IOException {
+		List<Validation<?>> messages = new ArrayList<Validation<?>>();
+		Resource child = container.getChild("jdbcservice.xml");
+		if (child != null) {
+			EAIRepositoryUtils.updateBrokenReference(child, from, to, Charset.forName("UTF-8"));
 		}
 		return messages;
 	}
