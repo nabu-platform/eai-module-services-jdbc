@@ -45,7 +45,9 @@ import be.nabu.eai.repository.resources.RepositoryEntry;
 import be.nabu.jfx.control.tree.Tree;
 import be.nabu.jfx.control.tree.TreeItem;
 import be.nabu.libs.artifacts.api.Artifact;
+import be.nabu.libs.property.ValueUtils;
 import be.nabu.libs.property.api.Property;
+import be.nabu.libs.property.api.Value;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
 import be.nabu.libs.types.TypeUtils;
@@ -53,8 +55,10 @@ import be.nabu.libs.types.api.ComplexType;
 import be.nabu.libs.types.api.DefinedType;
 import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.base.RootElement;
+import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.FormatProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
+import be.nabu.libs.types.properties.NameProperty;
 import be.nabu.libs.types.properties.TimezoneProperty;
 import be.nabu.libs.validator.api.ValidationMessage;
 import be.nabu.libs.validator.api.ValidationMessage.Severity;
@@ -360,6 +364,14 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 	}
 	
 	
+	public static String getName(Value<?>...properties) {
+		String value = ValueUtils.getValue(CollectionNameProperty.getInstance(), properties);
+		if (value == null) {
+			value = ValueUtils.getValue(NameProperty.getInstance(), properties);
+		}
+		return value;
+	}
+	
 	private void generateInsert(Button button, final JDBCService service, final TextArea target) {
 		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
@@ -371,7 +383,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					sql.append("\t" + child.getName());
 				}
-				target.textProperty().set("insert into " + EAIRepositoryUtils.uncamelify(service.getParameters().getName()) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)");
+				target.textProperty().set("insert into " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)");
 				MainController.getInstance().setChanged();
 			}
 		});
@@ -394,7 +406,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = case when :" + child.getName() + " is null then " + EAIRepositoryUtils.uncamelify(child.getName()) + " else :" + child.getName() + " end");
 					}
-					target.textProperty().set("update " + EAIRepositoryUtils.uncamelify(service.getParameters().getName()) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
+					target.textProperty().set("update " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
 					button.setText("Generate Update");
 				}
 				else {
@@ -410,7 +422,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = :" + child.getName());
 					}
-					target.textProperty().set("update " + EAIRepositoryUtils.uncamelify(service.getParameters().getName()) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
+					target.textProperty().set("update " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
 					button.setText("Generate Merge Update");
 				}
 				MainController.getInstance().setChanged();
@@ -429,7 +441,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()));
 				}
-				target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom " + EAIRepositoryUtils.uncamelify(service.getResults().getName()));
+				target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom " + EAIRepositoryUtils.uncamelify(getName(service.getResults().getProperties())));
 				MainController.getInstance().setChanged();
 			}
 		});
