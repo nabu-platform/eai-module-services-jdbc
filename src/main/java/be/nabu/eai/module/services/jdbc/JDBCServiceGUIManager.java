@@ -48,6 +48,7 @@ import be.nabu.libs.artifacts.api.Artifact;
 import be.nabu.libs.property.ValueUtils;
 import be.nabu.libs.property.api.Property;
 import be.nabu.libs.property.api.Value;
+import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
 import be.nabu.libs.types.TypeUtils;
@@ -59,6 +60,7 @@ import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.FormatProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.NameProperty;
+import be.nabu.libs.types.properties.PrimaryKeyProperty;
 import be.nabu.libs.types.properties.TimezoneProperty;
 import be.nabu.libs.validator.api.ValidationMessage;
 import be.nabu.libs.validator.api.ValidationMessage.Severity;
@@ -147,7 +149,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		iface.setOrientation(Orientation.HORIZONTAL);
 		main.getItems().addAll(top, iface);
 
-		ElementSelectionListener elementSelectionListener = new ElementSelectionListener(controller, false, true, FormatProperty.getInstance(), TimezoneProperty.getInstance(), MaxOccursProperty.getInstance());
+		ElementSelectionListener elementSelectionListener = new ElementSelectionListener(controller, false, true, FormatProperty.getInstance(), TimezoneProperty.getInstance(), MaxOccursProperty.getInstance(), PrimaryKeyProperty.getInstance(), CollectionNameProperty.getInstance());
 		elementSelectionListener.setForceAllowUpdate(true);
 		
 		ScrollPane left = new ScrollPane();
@@ -287,6 +289,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		iface.getItems().addAll(left, right);
 		
 		VBox vbox = new VBox();
+		
 		HBox hbox = new HBox();
 		TextField field = new TextField(service.getConnectionId());
 		field.textProperty().addListener(new ChangeListener<String>() {
@@ -309,6 +312,29 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 			}
 		});
 		hbox.getChildren().addAll(new Label("Connection ID: "), field);
+
+		HBox changeTrackerBox = new HBox();
+		TextField changeTrackerField = new TextField(JDBCServiceManager.getChangeTrackerId(service));
+		changeTrackerField.textProperty().addListener(new ChangeListener<String>() {
+			@Override
+			public void changed(ObservableValue<? extends String> arg0, String arg1, String arg2) {
+				if (arg2 != null) {
+					try {
+						if (entry.getRepository().getNode(arg2) != null && entry.getRepository().getNode(arg2).getArtifact() instanceof Service) {
+							service.setChangeTracker(JDBCServiceManager.getAsChangeTracker(entry.getRepository(), arg2));
+							MainController.getInstance().setChanged();
+						}
+					}
+					catch (IOException e) {
+						throw new RuntimeException(e);
+					}
+					catch (ParseException e) {
+						throw new RuntimeException(e);
+					}
+				}
+			}
+		});
+		changeTrackerBox.getChildren().addAll(new Label("Change Tracker Service ID: "), changeTrackerField);
 		
 		HBox generatedColumnBox = new HBox();
 		TextField generatedColumn = new TextField(service.getGeneratedColumn());

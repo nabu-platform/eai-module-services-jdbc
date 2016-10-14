@@ -1,6 +1,8 @@
 package be.nabu.eai.module.services.jdbc;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
 import java.nio.charset.Charset;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -17,8 +19,10 @@ import be.nabu.eai.repository.api.BrokenReferenceArtifactManager;
 import be.nabu.eai.repository.api.Entry;
 import be.nabu.eai.repository.api.ModifiableEntry;
 import be.nabu.eai.repository.api.ModifiableNodeEntry;
+import be.nabu.eai.repository.api.Repository;
 import be.nabu.eai.repository.api.ResourceEntry;
 import be.nabu.eai.repository.resources.MemoryEntry;
+import be.nabu.eai.repository.util.SystemPrincipal;
 import be.nabu.libs.artifacts.ArtifactResolverFactory;
 import be.nabu.libs.artifacts.api.Artifact;
 import be.nabu.libs.resources.ResourceReadableContainer;
@@ -28,7 +32,12 @@ import be.nabu.libs.resources.api.ReadableResource;
 import be.nabu.libs.resources.api.Resource;
 import be.nabu.libs.resources.api.ResourceContainer;
 import be.nabu.libs.resources.api.WritableResource;
+import be.nabu.libs.services.api.DefinedService;
+import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.jdbc.JDBCService;
+import be.nabu.libs.services.jdbc.api.ChangeTracker;
+import be.nabu.libs.services.pojo.POJOUtils;
+import be.nabu.libs.services.pojo.POJOUtils.ServiceInvocationHandler;
 import be.nabu.libs.types.TypeUtils;
 import be.nabu.libs.types.api.ComplexContent;
 import be.nabu.libs.types.api.ComplexType;
@@ -67,6 +76,7 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 			service.setGeneratedColumn(config.getGeneratedColumn());
 			service.setValidateInput(config.getValidateInput());
 			service.setValidateOutput(config.getValidateOutput());
+			service.setChangeTracker(getAsChangeTracker(entry.getRepository(), config.getChangeTrackerId()));
 			if (config.getInputDefinition() != null) {
 				Artifact artifact = entry.getRepository().resolve(config.getInputDefinition());
 				if (!(artifact instanceof ComplexType)) {
@@ -96,6 +106,17 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 		return service;
 	}
 
+	public static ChangeTracker getAsChangeTracker(Repository repository, String id) {
+		if (id != null && !id.trim().isEmpty()) {
+			Service changeTracker = (Service) repository.resolve(id);
+			if (changeTracker == null) {
+				throw new IllegalArgumentException("Could not find change tracker: " + id);
+			}
+			return POJOUtils.newProxy(ChangeTracker.class, repository, SystemPrincipal.ROOT, changeTracker);
+		}
+		return null;
+	}
+
 	@Override
 	public List<Validation<?>> save(ResourceEntry entry, JDBCService artifact) throws IOException {
 		JDBCServiceConfig config = new JDBCServiceConfig();
@@ -118,6 +139,7 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 		config.setValidateInput(artifact.getValidateInput());
 		config.setValidateOutput(artifact.getValidateOutput());
 		config.setGeneratedColumn(artifact.getGeneratedColumn());
+		config.setChangeTrackerId(getChangeTrackerId(artifact));
 		Resource resource = entry.getContainer().getChild("jdbcservice.xml");
 		if (resource == null) {
 			resource = ((ManageableContainer<?>) entry.getContainer()).create("jdbcservice.xml", "application/xml");
@@ -136,6 +158,19 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 		return new ArrayList<Validation<?>>();
 	}
 
+	public static String getChangeTrackerId(JDBCService artifact) {
+		if (artifact.getChangeTracker() != null && Proxy.isProxyClass(artifact.getChangeTracker().getClass())) {
+			InvocationHandler invocationHandler = Proxy.getInvocationHandler(artifact.getChangeTracker());
+			if (invocationHandler instanceof ServiceInvocationHandler) {
+				Service [] services = ((ServiceInvocationHandler<?>) invocationHandler).getServices();
+				if (services != null && services.length == 1 && services[0] instanceof DefinedService) {
+					return ((DefinedService) services[0]).getId();
+				}
+			}
+		}
+		return null;
+	}
+
 	@Override
 	public Class<JDBCService> getArtifactClass() {
 		return JDBCService.class;
@@ -143,7 +178,7 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 	
 	@XmlRootElement(name = "jdbcService")
 	public static class JDBCServiceConfig {
-		private String connectionId, sql, inputDefinition, outputDefinition, generatedColumn;
+		private String connectionId, changeTrackerId, sql, inputDefinition, outputDefinition, generatedColumn;
 		private Boolean validateInput, validateOutput;
 
 		public String getConnectionId() {
@@ -201,6 +236,15 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 		public void setGeneratedColumn(String generatedColumn) {
 			this.generatedColumn = generatedColumn;
 		}
+
+		public String getChangeTrackerId() {
+			return changeTrackerId;
+		}
+
+		public void setChangeTrackerId(String changeTrackerId) {
+			this.changeTrackerId = changeTrackerId;
+		}
+		
 	}
 
 	@Override
