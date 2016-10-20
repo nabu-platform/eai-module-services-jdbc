@@ -368,7 +368,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				MainController.getInstance().setChanged();
 			}
 		});
-		vbox.getChildren().addAll(hbox, generatedColumnBox, area);
+		vbox.getChildren().addAll(hbox, generatedColumnBox, changeTrackerBox, area);
 		top.getChildren().add(vbox);
 		AnchorPane.setBottomAnchor(vbox, 0d);
 		AnchorPane.setTopAnchor(vbox, 0d);
