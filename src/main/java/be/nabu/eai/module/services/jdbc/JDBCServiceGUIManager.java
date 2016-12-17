@@ -296,7 +296,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		field.textProperty().addListener(new ChangeListener<String>() {
 			@Override
 			public void changed(ObservableValue<? extends String> arg0, String arg1, String arg2) {
-				if (arg2 != null) {
+				if (arg2 != null && !arg2.trim().isEmpty()) {
 					try {
 						if (entry.getRepository().getNode(arg2) != null && entry.getRepository().getNode(arg2).getArtifact() instanceof DataSourceWithDialectProviderArtifact) {
 							service.setConnectionId(arg2);
@@ -310,6 +310,10 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						throw new RuntimeException(e);
 					}
 				}
+				else {
+					service.setConnectionId(null);
+					MainController.getInstance().setChanged();
+				}
 			}
 		});
 		hbox.getChildren().addAll(new Label("Connection ID: "), field);
@@ -319,7 +323,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		changeTrackerField.textProperty().addListener(new ChangeListener<String>() {
 			@Override
 			public void changed(ObservableValue<? extends String> arg0, String arg1, String arg2) {
-				if (arg2 != null) {
+				if (arg2 != null && !arg2.trim().isEmpty()) {
 					try {
 						if (entry.getRepository().getNode(arg2) != null && entry.getRepository().getNode(arg2).getArtifact() instanceof Service) {
 							service.setChangeTracker(JDBCServiceManager.getAsChangeTracker(entry.getRepository(), arg2));
@@ -332,6 +336,10 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					catch (ParseException e) {
 						throw new RuntimeException(e);
 					}
+				}
+				else {
+					service.setChangeTracker(null);
+					MainController.getInstance().setChanged();
 				}
 			}
 		});
