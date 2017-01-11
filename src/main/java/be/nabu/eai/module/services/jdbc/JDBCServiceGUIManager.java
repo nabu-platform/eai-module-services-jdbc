@@ -412,13 +412,26 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 			@Override
 			public void handle(ActionEvent event) {
 				StringBuilder sql = new StringBuilder();
+				String idField = null;
 				for (Element<?> child : TypeUtils.getAllChildren(service.getParameters())) {
+					if (child.getName().equalsIgnoreCase("id")) {
+						idField = child.getName();
+					}
 					if (!sql.toString().isEmpty()) {
 						sql.append(",\n");
 					}
 					sql.append("\t" + child.getName());
 				}
-				target.textProperty().set("insert into " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)");
+				String insertSql = "insert into " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
+				if (button.getText().contains("Merge")) {
+					insertSql += "\non conflict(" + idField + ") do update set";
+					insertSql += "\n" + EAIRepositoryUtils.uncamelify(sql.toString()).replaceAll("([\\w]+)", "$1 = excluded.$1");
+					button.setText("Generate Insert");
+				}
+				else {
+					button.setText("Generate Merge Insert");
+				}
+				target.textProperty().set(insertSql);
 				MainController.getInstance().setChanged();
 			}
 		});
