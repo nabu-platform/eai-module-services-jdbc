@@ -1,10 +1,18 @@
 package nabu.services.jdbc;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import javax.jws.WebParam;
 import javax.jws.WebResult;
 import javax.jws.WebService;
 import javax.validation.constraints.NotNull;
 
+import be.nabu.eai.repository.EAIRepositoryUtils;
+import be.nabu.eai.repository.EAIResourceRepository;
+import be.nabu.libs.services.jdbc.api.SQLDialect;
+import be.nabu.libs.types.ComplexContentWrapperFactory;
+import be.nabu.libs.types.api.ComplexContent;
 import nabu.services.jdbc.types.Paging;
 
 @WebService
@@ -30,5 +38,35 @@ public class Services {
 			offset *= limit;
 		}
 		return new Paging(limit, offset);
+	}
+	
+	@WebResult(name = "inserts")
+	@SuppressWarnings("unchecked")
+	public List<String> buildInserts(@WebParam(name = "instances") List<Object> objects, @NotNull @WebParam(name = "dialect") String dialect) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+		if (objects == null || objects.isEmpty()) {
+			return null;
+		}
+		SQLDialect result = (SQLDialect) Thread.currentThread().getContextClassLoader().loadClass(dialect).newInstance();
+		List<String> inserts = new ArrayList<String>();
+		for (Object object : objects) {
+			if (object != null) {
+				if (!(object instanceof ComplexContent)) {
+					object = ComplexContentWrapperFactory.getInstance().getWrapper().wrap(object);
+				}
+				if (object != null) {
+					inserts.add(result.buildInsertSQL((ComplexContent) object));
+				}
+			}
+		}
+		return inserts;
+	}
+	
+	@WebResult(name = "dialects")
+	public List<String> dialects() {
+		List<String> dialects = new ArrayList<String>();
+		for (Class<?> implementation : EAIRepositoryUtils.getImplementationsFor(EAIResourceRepository.getInstance().getClassLoader(), SQLDialect.class)) {
+			dialects.add(implementation.getName());
+		}
+		return dialects;
 	}
 }
