@@ -156,6 +156,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		ScrollPane left = new ScrollPane();
 		VBox leftBox = new VBox();
 		final Tree<Element<?>> input = new Tree<Element<?>>(new ElementMarshallable());
+		EAIDeveloperUtils.addElementExpansionHandler(input);
 		input.rootProperty().set(new ElementTreeItem(new RootElement(service.getInput()), null, false, false));
 		left.setContent(leftBox);
 		input.prefWidthProperty().bind(left.widthProperty());
@@ -231,6 +232,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		ScrollPane right = new ScrollPane();
 		VBox rightBox = new VBox();
 		final Tree<Element<?>> output = new Tree<Element<?>>(new ElementMarshallable());
+		EAIDeveloperUtils.addElementExpansionHandler(output);
 		output.rootProperty().set(new ElementTreeItem(new RootElement(service.getOutput()), null, false, false));
 		right.setContent(rightBox);
 		output.prefWidthProperty().bind(right.widthProperty());
