@@ -13,6 +13,7 @@ import be.nabu.eai.repository.EAIResourceRepository;
 import be.nabu.libs.services.jdbc.api.SQLDialect;
 import be.nabu.libs.types.ComplexContentWrapperFactory;
 import be.nabu.libs.types.api.ComplexContent;
+import nabu.services.jdbc.types.Page;
 import nabu.services.jdbc.types.Paging;
 
 @WebService
@@ -38,6 +39,11 @@ public class Services {
 			offset *= limit;
 		}
 		return new Paging(limit, offset);
+	}
+	
+	@WebResult(name = "page")
+	public Page page(@WebParam(name = "limit") Integer limit, @WebParam(name = "offset") Long offset, @WebParam(name = "totalRowCount") long totalRowCount) {
+		return Page.build(totalRowCount, offset, limit);
 	}
 	
 	@WebResult(name = "inserts")
