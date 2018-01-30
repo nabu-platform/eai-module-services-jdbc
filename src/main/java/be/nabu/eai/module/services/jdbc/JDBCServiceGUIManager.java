@@ -3,6 +3,7 @@ package be.nabu.eai.module.services.jdbc;
 import java.io.IOException;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 
@@ -58,6 +59,7 @@ import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.base.RootElement;
 import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.FormatProperty;
+import be.nabu.libs.types.properties.HiddenProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
 import be.nabu.libs.types.properties.NameProperty;
@@ -112,6 +114,11 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					getArtifactManager().save(entry, service);
 					entry.getRepository().reload(target.itemProperty().get().getId());
 					controller.getRepositoryBrowser().refresh();
+					
+					// reload
+					MainController.getInstance().getAsynchronousRemoteServer().reload(target.itemProperty().get().getId());
+					MainController.getInstance().getCollaborationClient().created(entry.getId(), "Created");
+					
 					Tab tab = controller.newTab(entry.getId(), instance);
 					AnchorPane pane = new AnchorPane();
 					tab.setContent(pane);
@@ -485,14 +492,72 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
 			public void handle(ActionEvent event) {
-				StringBuilder sql = new StringBuilder();
-				for (Element<?> child : TypeUtils.getAllChildren(service.getResults())) {
-					if (!sql.toString().isEmpty()) {
-						sql.append(",\n");
+				if (button.getText().contains("Join")) {
+					StringBuilder sql = new StringBuilder();
+					List<ComplexType> types = new ArrayList<ComplexType>();
+					ComplexType result = service.getResults();
+					while (result != null) {
+						types.add(result);
+						result = (ComplexType) result.getSuperType();
 					}
-					sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()));
+					Collections.reverse(types);
+					List<Element<?>> inherited = new ArrayList<Element<?>>();
+					for (ComplexType type : types) {
+						Boolean value = ValueUtils.getValue(HiddenProperty.getInstance(), type.getProperties());
+						if (!inherited.isEmpty() && (value == null || !value)) {
+							for (Element<?> child : inherited) {
+								if (!sql.toString().isEmpty()) {
+									sql.append(",\n");
+								}
+								sql.append("\t" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + "." + EAIRepositoryUtils.uncamelify(child.getName()));
+							}
+							inherited.clear();
+						}
+						for (Element<?> child : type) {
+							if (value != null && value) {
+								inherited.add(child);
+							}
+							else {
+								if (!sql.toString().isEmpty()) {
+									sql.append(",\n");
+								}
+								sql.append("\t" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + "." + EAIRepositoryUtils.uncamelify(child.getName()));
+							}
+						}
+					}
+					StringBuilder from = new StringBuilder();
+					ComplexType previous = null;
+					for (ComplexType type : types) {
+						Boolean value = ValueUtils.getValue(HiddenProperty.getInstance(), type.getProperties());
+						if (value != null && value) {
+							continue;
+						}
+						String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
+						if (previous != null) {
+							String previousName = EAIRepositoryUtils.uncamelify(getName(previous.getProperties()));
+							from.append(" join " + typeName).append(" on " + typeName + ".id = " + previousName + ".id");
+						}
+						else {
+							from.append(" ").append(typeName);
+						}
+						previous = type;
+					}
+					target.textProperty().set("select\n" + sql.toString() + "\nfrom" + from.toString());
+					button.setText("Generate Select");
 				}
-				target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom " + EAIRepositoryUtils.uncamelify(getName(service.getResults().getProperties())));
+				else {
+					StringBuilder sql = new StringBuilder();
+					for (Element<?> child : TypeUtils.getAllChildren(service.getResults())) {
+						if (!sql.toString().isEmpty()) {
+							sql.append(",\n");
+						}
+						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()));
+					}
+					target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom " + EAIRepositoryUtils.uncamelify(getName(service.getResults().getProperties())));
+					if (service.getResults().getSuperType() != null) {
+						button.setText("Generate Join Select");
+					}
+				}
 				MainController.getInstance().setChanged();
 			}
 		});

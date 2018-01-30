@@ -15,6 +15,7 @@ import be.nabu.libs.types.ComplexContentWrapperFactory;
 import be.nabu.libs.types.api.ComplexContent;
 import nabu.services.jdbc.types.Page;
 import nabu.services.jdbc.types.Paging;
+import nabu.services.jdbc.types.Window;
 
 @WebService
 public class Services {
@@ -44,6 +45,11 @@ public class Services {
 	@WebResult(name = "page")
 	public Page page(@WebParam(name = "limit") Integer limit, @WebParam(name = "offset") Long offset, @WebParam(name = "totalRowCount") long totalRowCount) {
 		return Page.build(totalRowCount, offset, limit);
+	}
+	
+	@WebResult(name = "page")
+	public Window window(@WebParam(name = "limit") Integer limit, @WebParam(name = "offset") Long offset, @NotNull @WebParam(name = "rowCount") long rowCount, @WebParam(name = "hasNext") Boolean hasNext) {
+		return Window.build(hasNext, rowCount, offset, limit);
 	}
 	
 	@WebResult(name = "inserts")
