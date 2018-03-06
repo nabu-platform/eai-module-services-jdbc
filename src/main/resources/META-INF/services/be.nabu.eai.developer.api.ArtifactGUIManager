@@ -1,1 +1,2 @@
 be.nabu.eai.module.services.jdbc.JDBCServiceGUIManager
+be.nabu.eai.module.services.jdbc.stored.StoredProcedureGUIManager
