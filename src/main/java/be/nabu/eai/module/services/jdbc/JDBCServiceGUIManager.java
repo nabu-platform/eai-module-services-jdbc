@@ -3,9 +3,12 @@ package be.nabu.eai.module.services.jdbc;
 import java.io.IOException;
 import java.text.ParseException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
@@ -432,7 +435,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					sql.append("\t" + child.getName());
 				}
-				String insertSql = "insert into " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
+				String insertSql = "insert into ~" + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
 				if (button.getText().contains("Merge")) {
 					insertSql += "\non conflict(" + idField + ") do update set";
 					insertSql += "\n" + EAIRepositoryUtils.uncamelify(sql.toString()).replaceAll("([\\w]+)", "$1 = excluded.$1");
@@ -464,7 +467,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = case when :" + child.getName() + " is null then " + EAIRepositoryUtils.uncamelify(child.getName()) + " else :" + child.getName() + " end");
 					}
-					target.textProperty().set("update " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
+					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
 					button.setText("Generate Update");
 				}
 				else {
@@ -480,12 +483,50 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = :" + child.getName());
 					}
-					target.textProperty().set("update " + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
+					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
 					button.setText("Generate Merge Update");
 				}
 				MainController.getInstance().setChanged();
 			}
 		});
+	}
+
+	public static Map<ComplexType, String> generateNames(Iterable<ComplexType> types) {
+		Map<ComplexType, String> map = new HashMap<ComplexType, String>();
+		Map<String, ComplexType> reverseMap = new HashMap<String, ComplexType>();
+		for (ComplexType type : types) {
+			String name = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
+			String shortName = name.replaceAll("(?:^|_)(.)[^_]*", "$1");
+			// if we are already numerically assigning them, find the next available number
+			if (reverseMap.containsKey(shortName + "1")) {
+				String availableName = null;
+				for (int i = 3; i < 100; i++) {
+					if (!reverseMap.containsKey(shortName + i)) {
+						availableName = shortName + i;
+						break;
+					}
+				}
+				if (availableName == null) {
+					throw new IllegalStateException("Too many bindings for name: " + shortName);
+				}
+				map.put(type, availableName);
+				reverseMap.put(availableName, type);
+			}
+			// the name is already taken, let's switch to numerical assignment
+			else if (reverseMap.containsKey(shortName)) {
+				// move the original to 1
+				map.put(reverseMap.get(shortName), shortName + "1");
+				reverseMap.put(shortName + "1", reverseMap.get(shortName));
+				// and this one to 2
+				map.put(type, shortName + "2");
+				reverseMap.put(shortName + "2", type);
+			}
+			else {
+				map.put(type, shortName);
+				reverseMap.put(shortName, type);
+			}
+		}
+		return map;
 	}
 	
 	private void generateSelect(Button button, final JDBCService service, final TextArea target) {
@@ -502,6 +543,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					Collections.reverse(types);
 					List<Element<?>> inherited = new ArrayList<Element<?>>();
+					Map<ComplexType, String> names = generateNames(types);
 					for (ComplexType type : types) {
 						Boolean value = ValueUtils.getValue(HiddenProperty.getInstance(), type.getProperties());
 						if (!inherited.isEmpty() && (value == null || !value)) {
@@ -509,7 +551,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 								if (!sql.toString().isEmpty()) {
 									sql.append(",\n");
 								}
-								sql.append("\t" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + "." + EAIRepositoryUtils.uncamelify(child.getName()));
+								sql.append("\t" + names.get(type) + "." + EAIRepositoryUtils.uncamelify(child.getName()));
 							}
 							inherited.clear();
 						}
@@ -521,7 +563,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 								if (!sql.toString().isEmpty()) {
 									sql.append(",\n");
 								}
-								sql.append("\t" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + "." + EAIRepositoryUtils.uncamelify(child.getName()));
+								sql.append("\t" + names.get(type) + "." + EAIRepositoryUtils.uncamelify(child.getName()));
 							}
 						}
 					}
@@ -534,11 +576,11 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
 						if (previous != null) {
-							String previousName = EAIRepositoryUtils.uncamelify(getName(previous.getProperties()));
-							from.append(" join " + typeName).append(" on " + typeName + ".id = " + previousName + ".id");
+							String previousName = names.get(previous);
+							from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + ".id = " + previousName + ".id");
 						}
 						else {
-							from.append(" ").append(typeName);
+							from.append(" ~").append(typeName + " " + names.get(type));
 						}
 						previous = type;
 					}
@@ -546,14 +588,16 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					button.setText("Generate Select");
 				}
 				else {
+					Map<ComplexType, String> names = generateNames(Arrays.asList(service.getResults()));
+					String name = names.values().iterator().next();
 					StringBuilder sql = new StringBuilder();
 					for (Element<?> child : TypeUtils.getAllChildren(service.getResults())) {
 						if (!sql.toString().isEmpty()) {
 							sql.append(",\n");
 						}
-						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()));
+						sql.append("\t " + name + "." + EAIRepositoryUtils.uncamelify(child.getName()));
 					}
-					target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom " + EAIRepositoryUtils.uncamelify(getName(service.getResults().getProperties())));
+					target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom ~" + EAIRepositoryUtils.uncamelify(getName(service.getResults().getProperties())) + " " + name);
 					if (service.getResults().getSuperType() != null) {
 						button.setText("Generate Join Select");
 					}

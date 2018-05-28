@@ -45,11 +45,12 @@ public class StoredProcedureServiceInstance implements ServiceInstance {
 		try {
 			MetricInstance metrics = executionContext.getMetricInstance(artifact.getId());
 			
-			// get the connection id, you can override this at runtime
+			// get the connection id, you can override this at runtime. note that we don't need auto connection discovery (alla jdbc service) because you had to build the stored procedure from a connection
 			String connectionId = content == null ? null : (String) content.get(JDBCService.CONNECTION);
 			DataSourceWithDialectProviderArtifact dataSourceProvider;
 			if (connectionId == null) {
 				dataSourceProvider = (DataSourceWithDialectProviderArtifact) artifact.getConfig().getConnection();
+				connectionId = dataSourceProvider.getId();
 			}
 			else {
 				dataSourceProvider = executionContext.getServiceContext().getResolver(DataSourceWithDialectProviderArtifact.class).resolve(connectionId);
