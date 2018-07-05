@@ -5,11 +5,11 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
+import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
@@ -51,7 +51,6 @@ import be.nabu.jfx.control.tree.TreeItem;
 import be.nabu.libs.artifacts.api.Artifact;
 import be.nabu.libs.property.ValueUtils;
 import be.nabu.libs.property.api.Property;
-import be.nabu.libs.property.api.Value;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
@@ -65,7 +64,6 @@ import be.nabu.libs.types.properties.FormatProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
-import be.nabu.libs.types.properties.NameProperty;
 import be.nabu.libs.types.properties.PrimaryKeyProperty;
 import be.nabu.libs.types.properties.TimezoneProperty;
 import be.nabu.libs.validator.api.ValidationMessage;
@@ -167,6 +165,10 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		ScrollPane left = new ScrollPane();
 		VBox leftBox = new VBox();
 		final Tree<Element<?>> input = new Tree<Element<?>>(new ElementMarshallable());
+		if (service.isInputGenerated()) {
+			// TODO: introduce locking
+			ElementTreeItem.setListeners(input, new SimpleBooleanProperty(true), true);
+		}
 		EAIDeveloperUtils.addElementExpansionHandler(input);
 		input.rootProperty().set(new ElementTreeItem(new RootElement(service.getInput()), null, false, false));
 		left.setContent(leftBox);
@@ -243,6 +245,10 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		ScrollPane right = new ScrollPane();
 		VBox rightBox = new VBox();
 		final Tree<Element<?>> output = new Tree<Element<?>>(new ElementMarshallable());
+		if (service.isOutputGenerated()) {
+			// TODO: introduce locking
+			ElementTreeItem.setListeners(input, new SimpleBooleanProperty(true), true);
+		}
 		EAIDeveloperUtils.addElementExpansionHandler(output);
 		output.rootProperty().set(new ElementTreeItem(new RootElement(service.getOutput()), null, false, false));
 		right.setContent(rightBox);
@@ -411,15 +417,6 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		return service;
 	}
 	
-	
-	public static String getName(Value<?>...properties) {
-		String value = ValueUtils.getValue(CollectionNameProperty.getInstance(), properties);
-		if (value == null) {
-			value = ValueUtils.getValue(NameProperty.getInstance(), properties);
-		}
-		return value;
-	}
-	
 	private void generateInsert(Button button, final JDBCService service, final TextArea target) {
 		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
@@ -435,7 +432,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					sql.append("\t" + child.getName());
 				}
-				String insertSql = "insert into ~" + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
+				String insertSql = "insert into ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
 				if (button.getText().contains("Merge")) {
 					insertSql += "\non conflict(" + idField + ") do update set";
 					insertSql += "\n" + EAIRepositoryUtils.uncamelify(sql.toString()).replaceAll("([\\w]+)", "$1 = excluded.$1");
@@ -467,7 +464,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = case when :" + child.getName() + " is null then " + EAIRepositoryUtils.uncamelify(child.getName()) + " else :" + child.getName() + " end");
 					}
-					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
+					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
 					button.setText("Generate Update");
 				}
 				else {
@@ -483,7 +480,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = :" + child.getName());
 					}
-					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
+					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
 					button.setText("Generate Merge Update");
 				}
 				MainController.getInstance().setChanged();
@@ -491,44 +488,6 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		});
 	}
 
-	public static Map<ComplexType, String> generateNames(Iterable<ComplexType> types) {
-		Map<ComplexType, String> map = new HashMap<ComplexType, String>();
-		Map<String, ComplexType> reverseMap = new HashMap<String, ComplexType>();
-		for (ComplexType type : types) {
-			String name = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
-			String shortName = name.replaceAll("(?:^|_)(.)[^_]*", "$1");
-			// if we are already numerically assigning them, find the next available number
-			if (reverseMap.containsKey(shortName + "1")) {
-				String availableName = null;
-				for (int i = 3; i < 100; i++) {
-					if (!reverseMap.containsKey(shortName + i)) {
-						availableName = shortName + i;
-						break;
-					}
-				}
-				if (availableName == null) {
-					throw new IllegalStateException("Too many bindings for name: " + shortName);
-				}
-				map.put(type, availableName);
-				reverseMap.put(availableName, type);
-			}
-			// the name is already taken, let's switch to numerical assignment
-			else if (reverseMap.containsKey(shortName)) {
-				// move the original to 1
-				map.put(reverseMap.get(shortName), shortName + "1");
-				reverseMap.put(shortName + "1", reverseMap.get(shortName));
-				// and this one to 2
-				map.put(type, shortName + "2");
-				reverseMap.put(shortName + "2", type);
-			}
-			else {
-				map.put(type, shortName);
-				reverseMap.put(shortName, type);
-			}
-		}
-		return map;
-	}
-	
 	private void generateSelect(Button button, final JDBCService service, final TextArea target) {
 		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
@@ -543,7 +502,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					Collections.reverse(types);
 					List<Element<?>> inherited = new ArrayList<Element<?>>();
-					Map<ComplexType, String> names = generateNames(types);
+					Map<ComplexType, String> names = JDBCServiceManager.generateNames(types);
 					for (ComplexType type : types) {
 						Boolean value = ValueUtils.getValue(HiddenProperty.getInstance(), type.getProperties());
 						if (!inherited.isEmpty() && (value == null || !value)) {
@@ -574,7 +533,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						if (value != null && value) {
 							continue;
 						}
-						String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
+						String typeName = EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(type.getProperties()));
 						if (previous != null) {
 							String previousName = names.get(previous);
 							from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + ".id = " + previousName + ".id");
@@ -588,7 +547,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					button.setText("Generate Select");
 				}
 				else {
-					Map<ComplexType, String> names = generateNames(Arrays.asList(service.getResults()));
+					Map<ComplexType, String> names = JDBCServiceManager.generateNames(Arrays.asList(service.getResults()));
 					String name = names.values().iterator().next();
 					StringBuilder sql = new StringBuilder();
 					for (Element<?> child : TypeUtils.getAllChildren(service.getResults())) {
@@ -597,7 +556,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t " + name + "." + EAIRepositoryUtils.uncamelify(child.getName()));
 					}
-					target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom ~" + EAIRepositoryUtils.uncamelify(getName(service.getResults().getProperties())) + " " + name);
+					target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getResults().getProperties())) + " " + name);
 					if (service.getResults().getSuperType() != null) {
 						button.setText("Generate Join Select");
 					}

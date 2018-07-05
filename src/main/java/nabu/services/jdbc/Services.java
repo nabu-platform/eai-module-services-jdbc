@@ -5,6 +5,7 @@ import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -15,24 +16,36 @@ import javax.jws.WebService;
 import javax.validation.constraints.NotNull;
 
 import be.nabu.eai.api.Hidden;
+import be.nabu.eai.module.services.jdbc.JDBCServiceManager;
 import be.nabu.eai.module.services.jdbc.RepositoryDataSourceResolver;
 import be.nabu.eai.repository.EAIRepositoryUtils;
 import be.nabu.eai.repository.EAIResourceRepository;
+import be.nabu.eai.repository.util.SystemPrincipal;
+import be.nabu.libs.artifacts.api.Artifact;
 import be.nabu.libs.artifacts.api.DataSourceProviderArtifact;
 import be.nabu.libs.property.ValueUtils;
 import be.nabu.libs.property.api.Value;
 import be.nabu.libs.services.ServiceRuntime;
 import be.nabu.libs.services.api.ExecutionContext;
+import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.api.ServiceException;
 import be.nabu.libs.services.jdbc.JDBCService;
+import be.nabu.libs.services.jdbc.api.ChangeTracker;
 import be.nabu.libs.services.jdbc.api.SQLDialect;
+import be.nabu.libs.services.pojo.POJOUtils;
 import be.nabu.libs.types.ComplexContentWrapperFactory;
+import be.nabu.libs.types.DefinedTypeResolverFactory;
 import be.nabu.libs.types.TypeUtils;
 import be.nabu.libs.types.api.ComplexContent;
 import be.nabu.libs.types.api.ComplexType;
 import be.nabu.libs.types.api.DefinedType;
 import be.nabu.libs.types.api.Element;
+import be.nabu.libs.types.api.ModifiableElement;
+import be.nabu.libs.types.api.SimpleType;
 import be.nabu.libs.types.properties.CollectionNameProperty;
+import be.nabu.libs.types.properties.HiddenProperty;
+import be.nabu.libs.types.properties.MaxOccursProperty;
+import be.nabu.libs.types.properties.MinOccursProperty;
 import be.nabu.libs.types.properties.NameProperty;
 import be.nabu.libs.types.properties.PrimaryKeyProperty;
 import nabu.services.jdbc.types.Page;
@@ -43,6 +56,8 @@ import nabu.services.jdbc.types.Window;
 import nabu.services.jdbc.types.StoredProcedureInterface.ParameterType;
 import nabu.services.jdbc.types.StoredProcedureInterface.StoredProcedureParameter;
 
+// TODO: optimize the generated insert/update/select/delete adapters by persisting them (in non-dev mode)
+// currently all the optimizations with regards to JDBC services are basically thrown out as we recreate them for each call
 @WebService
 public class Services {
 	
@@ -280,13 +295,241 @@ public class Services {
 		return value;
 	}
 	
-	public void update(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances) throws ServiceException {
+	@SuppressWarnings("unchecked")
+	@WebResult(name = "select")
+	public JDBCSelectResult select(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @NotNull @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "query") Object query) throws ServiceException {
+		ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
+		if (resolve == null) {
+			throw new IllegalArgumentException("Could not find type: " + typeId);
+		}
+		List<ComplexType> types = new ArrayList<ComplexType>();
+		ComplexType result = resolve;
+		while (result != null) {
+			types.add(result);
+			result = (ComplexType) result.getSuperType();
+		}
+		Collections.reverse(types);
+		
+		Map<ComplexType, String> names = JDBCServiceManager.generateNames(types);
+		StringBuilder from = new StringBuilder();
+		StringBuilder where = new StringBuilder();
+		ComplexType previous = null;
+		Element<?> idField = null;
+		// as we step through the types, we may encounter hidden types with their fields hidden
+		// they belong to the next type in the line
+		// keep track of them here and handle them in the first non-hidden type
+		List<Element<?>> fields = new ArrayList<Element<?>>();
+		Map<String, Element<?>> availableFields = new HashMap<String, Element<?>>();
+		Map<String, String> fieldNames = new HashMap<String, String>();
+		for (ComplexType type : types) {
+			// always add all the elements
+			for (Element<?> child : type) {
+				fields.add(child);
+			}
+			Boolean value = ValueUtils.getValue(HiddenProperty.getInstance(), type.getProperties());
+			if (value != null && value) {
+				// add all fields to the hidden
+				continue;
+			}
+			String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
+			if (previous != null) {
+				String previousName = names.get(previous);
+				from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + ".id = " + previousName + ".id");
+			}
+			else {
+				from.append(" ~").append(typeName + " " + names.get(type));
+			}
+			if ((id != null && idField == null) || query != null) {
+				for (Element<?> child : fields) {
+					if (id != null && idField == null) {
+						Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
+						if (property != null && property.getValue()) {
+							idField = child;
+							where.append(" where " + names.get(type) + "." + EAIRepositoryUtils.uncamelify(child.getName()) + " = :id");
+						}
+					}
+					if (query != null) {
+						availableFields.put(child.getName(), child);
+						fieldNames.put(child.getName(), names.get(type) + "." + EAIRepositoryUtils.uncamelify(child.getName()));
+					}
+				}
+				if (id != null && idField == null) {
+					throw new IllegalArgumentException("Could not find id field for type " + type + " (id: " + id + ")");
+				}
+			}
+			previous = type;
+			// clear the fields before we start on the next type
+			fields.clear();
+		}
+		
+		String sql = "select * from " + from.toString();
+		
+		List<Element<?>> queryParameters = new ArrayList<Element<?>>();
+		if (query != null) {
+			if (!(query instanceof ComplexContent)) {
+				query = ComplexContentWrapperFactory.getInstance().getWrapper().wrap(query);
+			}
+			for (Element<?> child : TypeUtils.getAllChildren(((ComplexContent) query).getType())) {
+				// if the key exists in the record, let's search it
+				// if we have an id field, don't search it unless we don't provide an instance id as input
+				if (availableFields.containsKey(child.getName()) && (idField == null || !idField.getName().equals(child.getName()))) {
+					Object object = ((ComplexContent) query).get(child.getName());
+					if (object == null) {
+						Value<Integer> property = child.getProperty(MinOccursProperty.getInstance());
+						// if it is a required property but has no value, we want to find the values that are null
+						if (property == null || property.getValue() >= 1) {
+							if (where.length() == 0) {
+								where.append(" where ");
+							}
+							else {
+								where.append(" and ");
+							}
+							where.append(fieldNames.get(child.getName()) + " is null");
+							queryParameters.add(child);
+						}
+						// otherwise just an optional query parameter, skip it
+						else {
+							continue;
+						}
+					}
+					else {
+						Value<Integer> maxOccurs = child.getProperty(MaxOccursProperty.getInstance());
+						if (where.length() == 0) {
+							where.append(" where ");
+						}
+						else {
+							where.append(" and ");
+						}
+						String fieldName = fieldNames.get(child.getName());
+						queryParameters.add(child);
+						if (maxOccurs == null || maxOccurs.getValue() == 1) {
+							Element<?> available = availableFields.get(child.getName());
+							// if it is a single string, do a contains
+							if (available.getType() instanceof SimpleType && String.class.isAssignableFrom(((SimpleType<?>) available.getType()).getInstanceClass())) {
+								where.append("lower(" + fieldName + ")")
+									.append(" like '%' || lower(:" + child.getName() + ") || '%'");
+							}
+							else {
+								where.append(fieldName)
+									.append(" = :"+ child.getName());
+							}
+						}
+						else {
+							where.append(fieldName)
+								.append(" = any(:" + child.getName() + ")");
+						}
+					}
+				}
+			}
+		}
+		sql += where.toString();
+		
+		String serviceId = typeId + ":generated.select" + (idField == null ? "" : "ById");
+		JDBCService jdbc = new JDBCService(serviceId);
+		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+		jdbc.setInputGenerated(true);
+		jdbc.setOutputGenerated(false);
+		jdbc.setResults(resolve);
+		jdbc.setSql(sql);
+		
+		// we have regenerated the input, now set the correct input type
+		if (idField != null) {
+			Element<?> element = jdbc.getParameters().get("id");
+			((ModifiableElement<?>) element).setType(idField.getType());
+		}
+		
+		for (Element<?> queryParameter : queryParameters) {
+			Element<?> element = jdbc.getParameters().get(queryParameter.getName());
+			// get the type as defined in the structure
+			((ModifiableElement<?>) element).setType(availableFields.get(queryParameter.getName()).getType());
+			// get list properties from the query
+			Value<Integer> maxOccurs = queryParameter.getProperty(MaxOccursProperty.getInstance());
+			Value<Integer> minOccurs = queryParameter.getProperty(MinOccursProperty.getInstance());
+			if (maxOccurs != null) {
+				element.setProperty(maxOccurs);
+			}
+			if (minOccurs != null) {
+				element.setProperty(minOccurs);
+			}
+		}
+		
+		// create a new instance of the parameters so we can set the (optional) id
+		ComplexContent parameters = jdbc.getParameters().newInstance();
+		if (idField != null) {
+			parameters.set(idField.getName(), id);
+		}
+		
+		for (Element<?> queryParameter : queryParameters) {
+			parameters.set(queryParameter.getName(), ((ComplexContent) query).get(queryParameter.getName()));
+		}
+		
+		ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
+		input.set(JDBCService.CONNECTION, connection);
+		input.set(JDBCService.TRANSACTION, transaction);
+		input.set(JDBCService.PARAMETERS, parameters);
+		input.set(JDBCService.LIMIT, limit);
+		input.set(JDBCService.OFFSET, offset);
+		input.set(JDBCService.ORDER_BY, orderBy);
+		input.set(JDBCService.TOTAL_ROW_COUNT, totalRowCount);
+		input.set(JDBCService.HAS_NEXT, hasNext);
+		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
+		ComplexContent output = runtime.run(input);
+		
+		return new JDBCSelectResult(
+			(List<Object>) output.get(JDBCService.RESULTS), 
+			(Long) output.get(JDBCService.ROW_COUNT), 
+			(Long) output.get(JDBCService.TOTAL_ROW_COUNT), 
+			(Boolean) output.get(JDBCService.HAS_NEXT)
+		);
+	}
+	
+	public static class JDBCSelectResult {
+		private List<Object> results;
+		private Long rowCount, totalRowCount;
+		private Boolean hasNext;
+		public JDBCSelectResult() {
+			// auto
+		}
+		public JDBCSelectResult(List<Object> results, Long rowCount, Long totalRowCount, Boolean hasNext) {
+			this.results = results;
+			this.rowCount = rowCount;
+			this.totalRowCount = totalRowCount;
+			this.hasNext = hasNext;
+		}
+		public Long getTotalRowCount() {
+			return totalRowCount;
+		}
+		public void setTotalRowCount(Long totalRowCount) {
+			this.totalRowCount = totalRowCount;
+		}
+		public Long getRowCount() {
+			return rowCount;
+		}
+		public void setRowCount(Long rowCount) {
+			this.rowCount = rowCount;
+		}
+		public Boolean isHasNext() {
+			return hasNext;
+		}
+		public void setHasNext(Boolean hasNext) {
+			this.hasNext = hasNext;
+		}
+		public List<Object> getResults() {
+			return results;
+		}
+		public void setResults(List<Object> results) {
+			this.results = results;
+		}
+	}
+	
+	public void update(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
 			List<ComplexContent> contents = group.get(type);
 			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
 			id += ":generated.update";
 			JDBCService jdbc = new JDBCService(id);
+			jdbc.setChangeTracker(toChangeTracker(changeTracker));
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
@@ -301,14 +544,28 @@ public class Services {
 		}
 	}
 	
+	private ChangeTracker toChangeTracker(String id) {
+		if (id == null) {
+			return null;
+		}
+		Artifact resolve = EAIResourceRepository.getInstance().resolve(id);
+		if (resolve instanceof Service) {
+			return POJOUtils.newProxy(ChangeTracker.class, EAIResourceRepository.getInstance(), SystemPrincipal.ROOT, (Service) resolve);
+		}
+		else {
+			throw new IllegalArgumentException("The artifact is not a change tracker: " + id);
+		}
+	}
+	
 	@SuppressWarnings("unchecked")
-	public void insert(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances) throws ServiceException {
+	public void insert(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
 			List<ComplexContent> contents = group.get(type);
 			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
 			id += ":generated.insert";
 			JDBCService jdbc = new JDBCService(id);
+			jdbc.setChangeTracker(toChangeTracker(changeTracker));
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
@@ -346,7 +603,7 @@ public class Services {
 		}
 	}
 	
-	public void delete(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances) throws ServiceException {
+	public void delete(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
 			Element<?> primaryKey = null;
@@ -365,6 +622,7 @@ public class Services {
 			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
 			id += ":generated.delete";
 			JDBCService jdbc = new JDBCService(id);
+			jdbc.setChangeTracker(toChangeTracker(changeTracker));
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
