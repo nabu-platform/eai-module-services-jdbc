@@ -256,15 +256,28 @@ public class Services {
 		return grouped;
 	}
 	
-	private String generateInsert(ComplexType type) {
+	private String generateInsert(ComplexType type, boolean merge) {
 		StringBuilder sql = new StringBuilder();
+		String idField = null;
 		for (Element<?> child : TypeUtils.getAllChildren(type)) {
+			Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
+			if (property != null && property.getValue()) {
+				idField = child.getName();
+			}
 			if (!sql.toString().isEmpty()) {
 				sql.append(",\n");
 			}
 			sql.append("\t" + child.getName());
 		}
-		return "insert into ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
+		String result = "insert into ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
+		if (merge) {
+			if (idField == null) {
+				throw new IllegalStateException("Can only auto merge if a primary key field is present");
+			}
+			result += "\non conflict(" + idField + ") do update set";
+			result += "\n" + EAIRepositoryUtils.uncamelify(sql.toString()).replaceAll("([\\w]+)", "$1 = excluded.$1");
+		}
+		return result;
 	}
 	
 	private String generateUpdate(ComplexType type) {
@@ -557,20 +570,28 @@ public class Services {
 		}
 	}
 	
-	@SuppressWarnings("unchecked")
 	public void insert(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
+		insertOrUpdate(connection, transaction, instances, changeTracker, false);
+	}
+	
+	public void merge(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
+		insertOrUpdate(connection, transaction, instances, changeTracker, true);
+	}
+
+	@SuppressWarnings("unchecked")
+	private void insertOrUpdate(String connection, String transaction, List<Object> instances, String changeTracker, boolean merge) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
 			List<ComplexContent> contents = group.get(type);
 			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
-			id += ":generated.insert";
+			id += ":generated." + (merge ? "merge" : "insert");
 			JDBCService jdbc = new JDBCService(id);
 			jdbc.setChangeTracker(toChangeTracker(changeTracker));
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
 			jdbc.setParameters(type);
-			jdbc.setSql(generateInsert(type));
+			jdbc.setSql(generateInsert(type, merge));
 			Element<?> primaryKey = null;
 			// let's get the primary key to see if we have a generated column
 			for (Element<?> child : TypeUtils.getAllChildren(type)) {
