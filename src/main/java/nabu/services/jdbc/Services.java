@@ -2,18 +2,23 @@ package nabu.services.jdbc;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import javax.jws.WebParam;
 import javax.jws.WebResult;
 import javax.jws.WebService;
 import javax.validation.constraints.NotNull;
+import javax.xml.bind.annotation.XmlRootElement;
+import javax.xml.bind.annotation.XmlType;
 
 import be.nabu.eai.api.Hidden;
 import be.nabu.eai.module.services.jdbc.JDBCServiceManager;
@@ -30,18 +35,25 @@ import be.nabu.libs.services.api.ExecutionContext;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.api.ServiceException;
 import be.nabu.libs.services.jdbc.JDBCService;
+import be.nabu.libs.services.jdbc.JDBCServiceInstance;
 import be.nabu.libs.services.jdbc.api.ChangeTracker;
+import be.nabu.libs.services.jdbc.api.DataSourceWithAffixes;
+import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
 import be.nabu.libs.services.jdbc.api.SQLDialect;
+import be.nabu.libs.services.jdbc.api.DataSourceWithAffixes.AffixMapping;
 import be.nabu.libs.services.pojo.POJOUtils;
 import be.nabu.libs.types.ComplexContentWrapperFactory;
 import be.nabu.libs.types.DefinedTypeResolverFactory;
+import be.nabu.libs.types.SimpleTypeWrapperFactory;
 import be.nabu.libs.types.TypeUtils;
 import be.nabu.libs.types.api.ComplexContent;
 import be.nabu.libs.types.api.ComplexType;
 import be.nabu.libs.types.api.DefinedType;
 import be.nabu.libs.types.api.Element;
+import be.nabu.libs.types.api.KeyValuePair;
 import be.nabu.libs.types.api.ModifiableElement;
 import be.nabu.libs.types.api.SimpleType;
+import be.nabu.libs.types.api.TypedKeyValuePair;
 import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
@@ -52,6 +64,7 @@ import nabu.services.jdbc.types.Page;
 import nabu.services.jdbc.types.Paging;
 import nabu.services.jdbc.types.StoredProcedure;
 import nabu.services.jdbc.types.StoredProcedureInterface;
+import nabu.services.jdbc.types.TypeDescription;
 import nabu.services.jdbc.types.Window;
 import nabu.services.jdbc.types.StoredProcedureInterface.ParameterType;
 import nabu.services.jdbc.types.StoredProcedureInterface.StoredProcedureParameter;
@@ -62,6 +75,143 @@ import nabu.services.jdbc.types.StoredProcedureInterface.StoredProcedureParamete
 public class Services {
 	
 	ExecutionContext executionContext;
+	
+	@XmlType(propOrder = { "entries", "sql" })
+	@XmlRootElement
+	public static class Explanation {
+		private List<String> entries;
+		private String sql;
+		public List<String> getEntries() {
+			return entries;
+		}
+		public void setEntries(List<String> entries) {
+			this.entries = entries;
+		}
+		public String getSql() {
+			return sql;
+		}
+		public void setSql(String sql) {
+			this.sql = sql;
+		}
+	}
+	
+	@WebResult(name = "explanation")
+	public Explanation explain(@NotNull @WebParam(name = "jdbcServiceId") String jdbcServiceId, @WebParam(name = "connectionId") String connectionId) throws SQLException {
+		JDBCService service = (JDBCService) EAIResourceRepository.getInstance().resolve(jdbcServiceId);
+		if (service == null) {
+			throw new IllegalArgumentException("No jdbc service found with id: " + jdbcServiceId);
+		}
+		if (connectionId == null) {
+			connectionId = service.getConnectionId();
+		}
+		if (connectionId == null) {
+			connectionId = new RepositoryDataSourceResolver().getDataSourceId(jdbcServiceId);
+		}
+		if (connectionId == null) {
+			throw new IllegalArgumentException("Can not find a valid connection id");
+		}
+		DataSourceWithDialectProviderArtifact provider = (DataSourceWithDialectProviderArtifact) EAIResourceRepository.getInstance().resolve(connectionId);
+		if (provider == null) {
+			throw new IllegalArgumentException("No connection found with id: " + connectionId);
+		}
+		
+		String sql = service.getSql();
+		// rewrite it if necessary
+		if (provider.getDialect() != null) {
+			sql = provider.getDialect().rewrite(sql, service.getParameters(), service.getResults());
+		}
+		
+		List<AffixMapping> affixes = provider instanceof DataSourceWithAffixes ? ((DataSourceWithAffixes) provider).getAffixes() : null;
+		sql = JDBCServiceInstance.replaceAffixes(service, affixes, sql);
+		sql = sql.replaceAll("(?<!:):[\\w]+", "?");
+		
+		Explanation explanation = new Explanation();
+		explanation.setSql(sql);
+		
+		Connection connection = provider.getDataSource().getConnection();
+		try {
+			PreparedStatement statement = connection.prepareStatement("explain " + sql);
+			try {
+				ComplexType type = (ComplexType) service.getInput().get(JDBCService.PARAMETERS).getType();
+				int index = 1;
+				for (String inputName : service.getInputNames()) {
+					Element<?> child = type.get(inputName);
+					// presumably dynamically fed in through properties
+					if (child == null) {
+						statement.setString(index++, "");
+					}
+					else if (child.getType() instanceof SimpleType) {
+						if (child.getType().isList(child.getProperties()) && provider.getDialect().hasArraySupport(child)) {
+							Class<?> instanceClass = ((SimpleType<?>) child.getType()).getInstanceClass();
+							if (Integer.class.isAssignableFrom(instanceClass)) {
+								statement.setObject(index++, new Integer[] { 1 });
+							}
+							else if (Long.class.isAssignableFrom(instanceClass)) {
+								statement.setObject(index++, new Long[] { 1l });
+							}
+							else if (Float.class.isAssignableFrom(instanceClass)) {
+								statement.setObject(index++, new Float[] { 1.0f });
+							}
+							else if (Double.class.isAssignableFrom(instanceClass)) {
+								statement.setObject(index++, new Double[] { 1.0 });
+							}
+							else if (Boolean.class.isAssignableFrom(instanceClass)) {
+								statement.setObject(index++, new Boolean[] { true });
+							}
+							else if (Date.class.isAssignableFrom(instanceClass)) {
+								statement.setObject(index++, new Date[] { new java.sql.Date(new Date().getTime())});
+							}
+							else if (UUID.class.isAssignableFrom(instanceClass)) {
+								statement.setObject(index++, new String[] { UUID.randomUUID().toString().replace("-", "") });
+							}
+							else {
+								statement.setObject(index++, new String[] { "" });
+							}
+						}
+						else {
+							Class<?> instanceClass = ((SimpleType<?>) child.getType()).getInstanceClass();
+							if (Integer.class.isAssignableFrom(instanceClass)) {
+								statement.setInt(index++, 1);
+							}
+							else if (Long.class.isAssignableFrom(instanceClass)) {
+								statement.setLong(index++, 1l);
+							}
+							else if (Float.class.isAssignableFrom(instanceClass)) {
+								statement.setFloat(index++, 1.0f);
+							}
+							else if (Double.class.isAssignableFrom(instanceClass)) {
+								statement.setDouble(index++, 1.0);
+							}
+							else if (Boolean.class.isAssignableFrom(instanceClass)) {
+								statement.setBoolean(index++, true);
+							}
+							else if (Date.class.isAssignableFrom(instanceClass)) {
+								statement.setDate(index++, new java.sql.Date(new Date().getTime()));
+							}
+							else if (UUID.class.isAssignableFrom(instanceClass)) {
+								statement.setString(index++, UUID.randomUUID().toString().replace("-", ""));
+							}
+							else {
+								statement.setString(index++, "");
+							}
+						}
+					}
+				}
+				ResultSet executeQuery = statement.executeQuery();
+				explanation.setEntries(new ArrayList<String>());
+				while (executeQuery.next()) {
+					explanation.getEntries().add(executeQuery.getString(1));
+				}
+				return explanation;
+			}
+			finally {
+				statement.close();
+			}
+		}
+		finally {
+			connection.close();
+		}
+	}
 	
 	@WebResult(name = "paging")
 	public Paging paging(@WebParam(name = "limit") Integer limit, @WebParam(name = "maxLimit") @NotNull Integer maxLimit, @WebParam(name = "offset") Integer offset, @WebParam(name = "maxOffset") Integer maxOffset, @WebParam(name = "isPageOffset") Boolean isPageOffset) {
@@ -300,6 +450,14 @@ public class Services {
 		return "update ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
 	}
 	
+	@WebResult(name = "description")
+	public TypeDescription describe(@WebParam(name = "typeId") String typeId) {
+		ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
+		TypeDescription description = new TypeDescription();
+		description.setCollectionName(EAIRepositoryUtils.uncamelify(getName(resolve.getProperties())));
+		return description;
+	}
+	
 	private static String getName(Value<?>...properties) {
 		String value = ValueUtils.getValue(CollectionNameProperty.getInstance(), properties);
 		if (value == null) {
@@ -480,6 +638,78 @@ public class Services {
 		input.set(JDBCService.CONNECTION, connection);
 		input.set(JDBCService.TRANSACTION, transaction);
 		input.set(JDBCService.PARAMETERS, parameters);
+		input.set(JDBCService.LIMIT, limit);
+		input.set(JDBCService.OFFSET, offset);
+		input.set(JDBCService.ORDER_BY, orderBy);
+		input.set(JDBCService.TOTAL_ROW_COUNT, totalRowCount);
+		input.set(JDBCService.HAS_NEXT, hasNext);
+		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
+		ComplexContent output = runtime.run(input);
+		
+		return new JDBCSelectResult(
+			(List<Object>) output.get(JDBCService.RESULTS), 
+			(Long) output.get(JDBCService.ROW_COUNT), 
+			(Long) output.get(JDBCService.TOTAL_ROW_COUNT), 
+			(Boolean) output.get(JDBCService.HAS_NEXT)
+		);
+	}
+	
+	@SuppressWarnings("unchecked")
+	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "sql") String sql, @WebParam(name = "properties") List<KeyValuePair> properties) throws ServiceException {
+		String serviceId = typeId + ":generated.selectDynamic";
+		JDBCService jdbc = new JDBCService(serviceId);
+		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+		jdbc.setInputGenerated(true);
+		jdbc.setOutputGenerated(typeId == null);
+		// if we don't have a type, a new one will be generated and used
+		// the results can be used in dynamic scenarios
+		if (typeId != null) {
+			ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
+			if (resolve == null) {
+				throw new IllegalArgumentException("Could not find type: " + typeId);
+			}
+			jdbc.setResults(resolve);
+		}
+		
+		// triggers generation of input/output
+		jdbc.setSql(sql);
+		
+		Map<String, SimpleType<?>> types = new HashMap<String, SimpleType<?>>();
+		if (properties != null) {
+			for (KeyValuePair pair : properties) {
+				if (pair instanceof TypedKeyValuePair) {
+					String type = ((TypedKeyValuePair) pair).getType();
+					SimpleType<?> simpleType = null;
+					if (type != null) {
+						simpleType = SimpleTypeWrapperFactory.getInstance().getWrapper().getByName(type);
+					}
+					if (simpleType == null) {
+						simpleType = SimpleTypeWrapperFactory.getInstance().getWrapper().wrap(String.class);
+					}
+					types.put(pair.getKey(), simpleType);
+				}
+			}
+		}
+		// an input document was generated, we just need to set the correct types
+		for (Element<?> element : TypeUtils.getAllChildren(jdbc.getParameters())) {
+			if (element instanceof ModifiableElement) {
+				if (types.containsKey(element.getName())) {
+					((ModifiableElement<?>) element).setType(types.get(element.getName()));
+				}
+			}
+		}
+		
+		ComplexContent newInstance = jdbc.getParameters().newInstance();
+		if (properties != null) {
+			for (KeyValuePair pair : properties) {
+				newInstance.set(pair.getKey(), pair.getValue());
+			}
+		}
+		
+		ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
+		input.set(JDBCService.CONNECTION, connection);
+		input.set(JDBCService.TRANSACTION, transaction);
+		input.set(JDBCService.PARAMETERS, newInstance);
 		input.set(JDBCService.LIMIT, limit);
 		input.set(JDBCService.OFFSET, offset);
 		input.set(JDBCService.ORDER_BY, orderBy);
