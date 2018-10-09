@@ -230,7 +230,7 @@ public class Services {
 		else if (maxOffset != null && offset > maxOffset) {
 			offset = maxOffset;
 		}
-		if (isPageOffset == null || isPageOffset) {
+		if (limit != null && (isPageOffset == null || isPageOffset)) {
 			offset *= limit;
 		}
 		return new Paging(limit, offset);
