@@ -54,6 +54,7 @@ import be.nabu.libs.types.api.KeyValuePair;
 import be.nabu.libs.types.api.ModifiableElement;
 import be.nabu.libs.types.api.SimpleType;
 import be.nabu.libs.types.api.TypedKeyValuePair;
+import be.nabu.libs.types.base.ValueImpl;
 import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
@@ -468,7 +469,7 @@ public class Services {
 	
 	@SuppressWarnings("unchecked")
 	@WebResult(name = "select")
-	public JDBCSelectResult select(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @NotNull @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "query") Object query) throws ServiceException {
+	public JDBCSelectResult select(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @NotNull @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "query") Object query, @WebParam(name = "language") String language) throws ServiceException {
 		ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
 		if (resolve == null) {
 			throw new IllegalArgumentException("Could not find type: " + typeId);
@@ -643,6 +644,11 @@ public class Services {
 		input.set(JDBCService.ORDER_BY, orderBy);
 		input.set(JDBCService.TOTAL_ROW_COUNT, totalRowCount);
 		input.set(JDBCService.HAS_NEXT, hasNext);
+		
+		if (language != null && jdbc.getServiceInterface().getInputDefinition().get("language") != null) {
+			input.set("language", language);
+		}
+		
 		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 		ComplexContent output = runtime.run(input);
 		
@@ -655,7 +661,7 @@ public class Services {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "sql") String sql, @WebParam(name = "properties") List<KeyValuePair> properties) throws ServiceException {
+	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "sql") String sql, @WebParam(name = "properties") List<KeyValuePair> properties, @WebParam(name = "language") String language) throws ServiceException {
 		String serviceId = typeId + ":generated.selectDynamic";
 		JDBCService jdbc = new JDBCService(serviceId);
 		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
@@ -673,6 +679,15 @@ public class Services {
 		
 		// triggers generation of input/output
 		jdbc.setSql(sql);
+		
+		// if we have no type, try best effort to pinpoint a primary key
+		if (typeId == null) {
+			for (Element<?> element : TypeUtils.getAllChildren(jdbc.getResults())) {
+				if (element.getName().equals("id")) {
+					element.setProperty(new ValueImpl<Boolean>(PrimaryKeyProperty.getInstance(), true));
+				}
+			}
+		}
 		
 		Map<String, SimpleType<?>> types = new HashMap<String, SimpleType<?>>();
 		if (properties != null) {
@@ -715,6 +730,11 @@ public class Services {
 		input.set(JDBCService.ORDER_BY, orderBy);
 		input.set(JDBCService.TOTAL_ROW_COUNT, totalRowCount);
 		input.set(JDBCService.HAS_NEXT, hasNext);
+		
+		if (language != null && jdbc.getServiceInterface().getInputDefinition().get("language") != null) {
+			input.set("language", language);
+		}
+		
 		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 		ComplexContent output = runtime.run(input);
 		
@@ -765,7 +785,7 @@ public class Services {
 		}
 	}
 	
-	public void update(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
+	public void update(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker, @WebParam(name = "language") String language) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
 			List<ComplexContent> contents = group.get(type);
@@ -782,6 +802,11 @@ public class Services {
 			input.set(JDBCService.CONNECTION, connection);
 			input.set(JDBCService.TRANSACTION, transaction);
 			input.set(JDBCService.PARAMETERS, contents);
+			
+			if (language != null && jdbc.getServiceInterface().getInputDefinition().get("language") != null) {
+				input.set("language", language);
+			}
+			
 			ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 			runtime.run(input);
 		}
