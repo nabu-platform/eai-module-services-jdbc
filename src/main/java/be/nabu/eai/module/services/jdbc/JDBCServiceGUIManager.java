@@ -51,6 +51,7 @@ import be.nabu.jfx.control.tree.TreeItem;
 import be.nabu.libs.artifacts.api.Artifact;
 import be.nabu.libs.property.ValueUtils;
 import be.nabu.libs.property.api.Property;
+import be.nabu.libs.property.api.Value;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
@@ -61,6 +62,7 @@ import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.base.RootElement;
 import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.FormatProperty;
+import be.nabu.libs.types.properties.GeneratedProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
@@ -424,6 +426,11 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				StringBuilder sql = new StringBuilder();
 				String idField = null;
 				for (Element<?> child : TypeUtils.getAllChildren(service.getParameters())) {
+					// if it is generated, we don't put it in the database by default
+					Value<Boolean> property = child.getProperty(GeneratedProperty.getInstance());
+					if (property != null && property.getValue() != null && property.getValue()) {
+						continue;
+					}
 					if (child.getName().equalsIgnoreCase("id")) {
 						idField = child.getName();
 					}
@@ -455,6 +462,11 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					StringBuilder sql = new StringBuilder();
 					String idField = null;
 					for (Element<?> child : TypeUtils.getAllChildren(service.getParameters())) {
+						// if it is generated, we don't update it by default
+						Value<Boolean> property = child.getProperty(GeneratedProperty.getInstance());
+						if (property != null && property.getValue() != null && property.getValue()) {
+							continue;
+						}
 						if (child.getName().equalsIgnoreCase("id")) {
 							idField = child.getName();
 							continue;
@@ -471,6 +483,11 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					StringBuilder sql = new StringBuilder();
 					String idField = null;
 					for (Element<?> child : TypeUtils.getAllChildren(service.getParameters())) {
+						// if it is generated, we don't update it by default
+						Value<Boolean> property = child.getProperty(GeneratedProperty.getInstance());
+						if (property != null && property.getValue() != null && property.getValue()) {
+							continue;
+						}
 						if (child.getName().equalsIgnoreCase("id")) {
 							idField = child.getName();
 							continue;

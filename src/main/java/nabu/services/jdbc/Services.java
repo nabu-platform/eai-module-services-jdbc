@@ -56,6 +56,7 @@ import be.nabu.libs.types.api.SimpleType;
 import be.nabu.libs.types.api.TypedKeyValuePair;
 import be.nabu.libs.types.base.ValueImpl;
 import be.nabu.libs.types.properties.CollectionNameProperty;
+import be.nabu.libs.types.properties.GeneratedProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
@@ -411,6 +412,12 @@ public class Services {
 		StringBuilder sql = new StringBuilder();
 		String idField = null;
 		for (Element<?> child : TypeUtils.getAllChildren(type)) {
+			// if it is generated, we don't insert it by default
+			Value<Boolean> generatedProperty = child.getProperty(GeneratedProperty.getInstance());
+			if (generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) {
+				continue;
+			}
+			
 			Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
 			if (property != null && property.getValue()) {
 				idField = child.getName();
@@ -435,6 +442,12 @@ public class Services {
 		StringBuilder sql = new StringBuilder();
 		String idField = null;
 		for (Element<?> child : TypeUtils.getAllChildren(type)) {
+			// if it is generated, we don't update it by default
+			Value<Boolean> generatedProperty = child.getProperty(GeneratedProperty.getInstance());
+			if (generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) {
+				continue;
+			}
+			
 			Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
 			if (property != null && property.getValue()) {
 				idField = child.getName();
