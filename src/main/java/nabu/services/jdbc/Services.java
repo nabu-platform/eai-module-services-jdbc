@@ -11,6 +11,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.UUID;
 
 import javax.jws.WebParam;
@@ -62,6 +63,7 @@ import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
 import be.nabu.libs.types.properties.NameProperty;
 import be.nabu.libs.types.properties.PrimaryKeyProperty;
+import be.nabu.libs.types.properties.TimezoneProperty;
 import nabu.services.jdbc.types.Page;
 import nabu.services.jdbc.types.Paging;
 import nabu.services.jdbc.types.StoredProcedure;
@@ -674,27 +676,45 @@ public class Services {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "sql") String sql, @WebParam(name = "properties") List<KeyValuePair> properties, @WebParam(name = "language") String language) throws ServiceException {
+	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "sql") String sql, @WebParam(name = "properties") List<KeyValuePair> properties, @WebParam(name = "language") String language, @WebParam(name = "typeAsHint") Boolean typeIdAsHint) throws ServiceException {
 		String serviceId = typeId + ":generated.selectDynamic";
 		JDBCService jdbc = new JDBCService(serviceId);
 		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 		jdbc.setInputGenerated(true);
-		jdbc.setOutputGenerated(typeId == null);
+		jdbc.setOutputGenerated(typeId == null || (typeIdAsHint != null && typeIdAsHint));
 		// if we don't have a type, a new one will be generated and used
 		// the results can be used in dynamic scenarios
+		ComplexType resolve = null;
 		if (typeId != null) {
-			ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
+			resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
 			if (resolve == null) {
 				throw new IllegalArgumentException("Could not find type: " + typeId);
 			}
-			jdbc.setResults(resolve);
+			if (typeIdAsHint == null || !typeIdAsHint) {
+				jdbc.setResults(resolve);
+			}
 		}
 		
 		// triggers generation of input/output
 		jdbc.setSql(sql);
 		
+		boolean foundPrimaryKey = false;
+		// we are using the type as a hint, copy types & properties
+		if (resolve != null && typeIdAsHint != null && typeIdAsHint) {
+			for (Element<?> element : TypeUtils.getAllChildren(jdbc.getResults())) {
+				Element<?> hint = resolve.get(element.getName());
+				if (hint != null) {
+					((ModifiableElement<?>) element).setType(hint.getType());
+					((ModifiableElement<?>) element).setProperty(hint.getProperties());
+					Value<Boolean> property = hint.getProperty(PrimaryKeyProperty.getInstance());
+					if (property != null && property.getValue()) {
+						foundPrimaryKey = true;
+					}
+				}
+			}
+		}
 		// if we have no type, try best effort to pinpoint a primary key
-		if (typeId == null) {
+		if (!foundPrimaryKey && (typeId == null || (typeIdAsHint != null && typeIdAsHint))) {
 			for (Element<?> element : TypeUtils.getAllChildren(jdbc.getResults())) {
 				if (element.getName().equals("id")) {
 					element.setProperty(new ValueImpl<Boolean>(PrimaryKeyProperty.getInstance(), true));
@@ -723,6 +743,10 @@ public class Services {
 			if (element instanceof ModifiableElement) {
 				if (types.containsKey(element.getName())) {
 					((ModifiableElement<?>) element).setType(types.get(element.getName()));
+					// if we have a date, set the timezone... this should also be part of the spec for typed
+					if (Date.class.isAssignableFrom(types.get(element.getName()).getInstanceClass())) {
+						((ModifiableElement<?>) element).setProperty(new ValueImpl<TimeZone>(TimezoneProperty.getInstance(), TimeZone.getTimeZone("UTC")));
+					}
 				}
 			}
 		}
