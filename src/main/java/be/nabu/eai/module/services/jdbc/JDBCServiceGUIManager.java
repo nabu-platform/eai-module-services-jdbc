@@ -9,12 +9,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
+import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
+import javafx.event.Event;
 import javafx.event.EventHandler;
+import javafx.geometry.Insets;
 import javafx.geometry.Orientation;
+import javafx.geometry.Pos;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
@@ -23,7 +27,6 @@ import javafx.scene.control.SplitPane;
 import javafx.scene.control.Tab;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.control.Tooltip;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.AnchorPane;
 import javafx.scene.layout.HBox;
@@ -46,6 +49,7 @@ import be.nabu.eai.repository.api.ModifiableEntry;
 import be.nabu.eai.repository.api.Node;
 import be.nabu.eai.repository.api.ResourceEntry;
 import be.nabu.eai.repository.resources.RepositoryEntry;
+import be.nabu.jfx.control.ace.AceEditor;
 import be.nabu.jfx.control.tree.Tree;
 import be.nabu.jfx.control.tree.TreeItem;
 import be.nabu.libs.artifacts.api.Artifact;
@@ -74,6 +78,7 @@ import be.nabu.libs.validator.api.ValidationMessage.Severity;
 public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 
 	private TextArea area;
+	private AceEditor editor;
 
 	@Override
 	public JDBCServiceManager getArtifactManager() {
@@ -163,6 +168,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 
 		ElementSelectionListener elementSelectionListener = new ElementSelectionListener(controller, false, true, FormatProperty.getInstance(), TimezoneProperty.getInstance(), MinOccursProperty.getInstance(), MaxOccursProperty.getInstance(), PrimaryKeyProperty.getInstance(), CollectionNameProperty.getInstance());
 		elementSelectionListener.setForceAllowUpdate(true);
+		elementSelectionListener.setActualId(entry.getId());
 		
 		ScrollPane left = new ScrollPane();
 		VBox leftBox = new VBox();
@@ -177,8 +183,10 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		input.prefWidthProperty().bind(left.widthProperty());
 		input.getSelectionModel().selectedItemProperty().addListener(elementSelectionListener);
 		
-		CheckBox validateInput = new CheckBox();
-		validateInput.setTooltip(new Tooltip("Validate Input"));
+		CheckBox validateInput = new CheckBox("Validate Input");
+		validateInput.setPadding(new Insets(10, 20, 0, 0));
+//		validateInput.setPadding(new Insets(14, 20, 10, 15));
+//		validateInput.setTooltip(new Tooltip("Validate Input"));
 		validateInput.setSelected(service.getValidateInput() != null && service.getValidateInput());
 		validateInput.selectedProperty().addListener(new ChangeListener<Boolean>() {
 			@Override
@@ -187,8 +195,10 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				MainController.getInstance().setChanged();
 			}
 		});
-		CheckBox validateOutput = new CheckBox();
-		validateOutput.setTooltip(new Tooltip("Validate Output"));
+		CheckBox validateOutput = new CheckBox("Validate Output");
+		validateOutput.setPadding(new Insets(10, 20, 0, 0));
+//		validateOutput.setPadding(new Insets(14, 20, 10, 15));
+//		validateOutput.setTooltip(new Tooltip("Validate Output"));
 		validateOutput.setSelected(service.getValidateOutput() != null && service.getValidateOutput());
 		validateOutput.selectedProperty().addListener(new ChangeListener<Boolean>() {
 			@Override
@@ -199,11 +209,17 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		});
 		
 		HBox namedInput = new HBox();
-		namedInput.getChildren().addAll(validateInput, new Label("Input definition: "));
+		namedInput.setPadding(new Insets(10));
+		namedInput.getChildren().addAll(validateInput);
+//		new Label("Input definition: ")
 		TextField inputField = new TextField();
-		final Button generateInsert = new Button("Generate Insert");
+		HBox.setHgrow(inputField, Priority.ALWAYS);
+		inputField.setPromptText("Input Definition");
+		final Button generateInsert = new Button("Insert");
+		generateInsert.setGraphic(MainController.loadGraphic("edit-button.png"));
 		generateInsert.disableProperty().set(service.isInputGenerated());
-		final Button generateUpdate = new Button("Generate Update");
+		final Button generateUpdate = new Button("Update");
+		generateUpdate.setGraphic(MainController.loadGraphic("edit-button.png"));
 		generateUpdate.disableProperty().set(service.isInputGenerated());
 		if (!service.isInputGenerated()) {
 			inputField.textProperty().set(((DefinedType) service.getParameters()).getId());
@@ -257,10 +273,15 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		output.prefWidthProperty().bind(right.widthProperty());
 		output.getSelectionModel().selectedItemProperty().addListener(elementSelectionListener);
 		HBox namedOutput = new HBox();
-		namedOutput.getChildren().addAll(validateOutput, new Label("Output definition: "));
-		final Button generateSelect = new Button("Generate Select");
+		namedOutput.setPadding(new Insets(10));
+		namedOutput.getChildren().addAll(validateOutput);
+//		new Label("Output definition: ")
+		final Button generateSelect = new Button("Select");
+		generateSelect.setGraphic(MainController.loadGraphic("edit-button.png"));
 		generateSelect.disableProperty().set(service.isOutputGenerated());
 		TextField outputField = new TextField();
+		HBox.setHgrow(outputField, Priority.ALWAYS);
+		outputField.setPromptText("Output definition");
 		if (!service.isOutputGenerated()) {
 			outputField.textProperty().set(((DefinedType) service.getResults()).getId());
 		}
@@ -337,7 +358,9 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				}
 			}
 		});
-		hbox.getChildren().addAll(new Label("Connection ID: "), field);
+		Label label = new Label("Connection Id: ");
+		label.setPadding(new Insets(4, 10, 0, 5));
+		hbox.getChildren().addAll(label, field);
 
 		HBox changeTrackerBox = new HBox();
 		TextField changeTrackerField = new TextField(JDBCServiceManager.getChangeTrackerId(service));
@@ -364,7 +387,9 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				}
 			}
 		});
-		changeTrackerBox.getChildren().addAll(new Label("Change Tracker Service ID: "), changeTrackerField);
+		Label label2 = new Label("Change Tracker Service: ");
+		label2.setPadding(new Insets(4, 10, 0, 5));
+		changeTrackerBox.getChildren().addAll(label2, changeTrackerField);
 		
 		HBox generatedColumnBox = new HBox();
 		TextField generatedColumn = new TextField(service.getGeneratedColumn());
@@ -375,7 +400,69 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				MainController.getInstance().setChanged();
 			}
 		});
-		generatedColumnBox.getChildren().addAll(new Label("Generated Column: "), generatedColumn);
+		Label label3 = new Label("Generated Column Name: ");
+		label3.setPadding(new Insets(4, 10, 0, 5));
+		generatedColumnBox.getChildren().addAll(label3, generatedColumn);
+		
+		label.setPrefWidth(200);
+		label.setAlignment(Pos.CENTER_RIGHT);
+		
+		label2.setPrefWidth(200);
+		label2.setAlignment(Pos.CENTER_RIGHT);
+		
+		label3.setPrefWidth(200);
+		label3.setAlignment(Pos.CENTER_RIGHT);
+		
+		hbox.setPadding(new Insets(15, 5, 3, 5));
+		generatedColumnBox.setPadding(new Insets(3, 5, 3, 5));
+		changeTrackerBox.setPadding(new Insets(3, 5, 15, 5));
+		
+		HBox.setHgrow(field, Priority.ALWAYS);
+		HBox.setHgrow(changeTrackerField, Priority.ALWAYS);
+		HBox.setHgrow(generatedColumn, Priority.ALWAYS);
+		
+		editor = new AceEditor();
+		VBox.setVgrow(editor.getWebView(), Priority.ALWAYS);
+		editor.getWebView().focusedProperty().addListener(new ChangeListener<Boolean>() {
+			@Override
+			public void changed(ObservableValue<? extends Boolean> arg0, Boolean arg1, Boolean arg2) {
+				if (!arg2) {
+					if (editor.getContent() != null && !editor.getContent().equals(service.getSql())) {
+						controller.notify(service.setSql(editor.getContent()).toArray(new ValidationMessage[0]));
+						getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
+						controller.getTree().refresh();
+						input.getTreeCell(input.rootProperty().get()).refresh();
+						output.getTreeCell(output.rootProperty().get()).refresh();
+						MainController.getInstance().setChanged();
+					}
+				}
+			}
+		});
+		editor.setContent("text/sql", service.getSql());
+		editor.subscribe(AceEditor.CHANGE, new EventHandler<Event>() {
+			@Override
+			public void handle(Event arg0) {
+				service.setSql(editor.getContent());
+				MainController.getInstance().setChanged();
+			}
+		});
+		editor.subscribe(AceEditor.SAVE, new EventHandler<Event>() {
+			@Override
+			public void handle(Event arg0) {
+				try {
+					MainController.getInstance().save(service.getId());
+				}
+				catch (IOException e) {
+					MainController.getInstance().notify(e);
+				}
+			}
+		});
+		editor.subscribe(AceEditor.CLOSE, new EventHandler<Event>() {
+			@Override
+			public void handle(Event arg0) {
+				MainController.getInstance().close(service.getId());
+			}
+		});
 		
 		area = new TextArea();
 		VBox.setVgrow(area, Priority.ALWAYS);
@@ -398,7 +485,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				MainController.getInstance().setChanged();
 			}
 		});
-		vbox.getChildren().addAll(hbox, generatedColumnBox, changeTrackerBox, area);
+		vbox.getChildren().addAll(hbox, generatedColumnBox, changeTrackerBox, editor.getWebView());
+		
 		top.getChildren().add(vbox);
 		AnchorPane.setBottomAnchor(vbox, 0d);
 		AnchorPane.setTopAnchor(vbox, 0d);
@@ -412,14 +500,14 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		AnchorPane.setLeftAnchor(main, 0d);
 		AnchorPane.setRightAnchor(main, 0d);
 		
-		generateInsert(generateInsert, service, area);
-		generateUpdate(generateUpdate, service, area);
-		generateSelect(generateSelect, service, area);
+		generateInsert(generateInsert, service, area, editor);
+		generateUpdate(generateUpdate, service, area, editor);
+		generateSelect(generateSelect, service, area, editor);
 		
 		return service;
 	}
 	
-	private void generateInsert(Button button, final JDBCService service, final TextArea target) {
+	private void generateInsert(Button button, final JDBCService service, final TextArea target, final AceEditor editor) {
 		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
 			public void handle(ActionEvent event) {
@@ -443,18 +531,21 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				if (button.getText().contains("Merge")) {
 					insertSql += "\non conflict(" + idField + ") do update set";
 					insertSql += "\n" + EAIRepositoryUtils.uncamelify(sql.toString()).replaceAll("([\\w]+)", "$1 = excluded.$1");
-					button.setText("Generate Insert");
+					button.setText("Insert");
+					button.setGraphic(MainController.loadGraphic("edit-button.png"));
 				}
 				else {
-					button.setText("Generate Merge Insert");
+					button.setText("Merge Insert");
+					button.setGraphic(MainController.loadGraphic("edit-button.png"));
 				}
-				target.textProperty().set(insertSql);
+//				target.textProperty().set(insertSql);
+				editor.setContent("text/sql", insertSql);
 				MainController.getInstance().setChanged();
 			}
 		});
 	}
 	
-	private void generateUpdate(Button button, final JDBCService service, final TextArea target) {
+	private void generateUpdate(Button button, final JDBCService service, final TextArea target, final AceEditor editor) {
 		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
 			public void handle(ActionEvent event) {
@@ -476,8 +567,11 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = case when :" + child.getName() + " is null then " + EAIRepositoryUtils.uncamelify(child.getName()) + " else :" + child.getName() + " end");
 					}
-					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
-					button.setText("Generate Update");
+					String result = "update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
+//					target.textProperty().set(result);
+					editor.setContent("text/sql", result);
+					button.setText("Update");
+					button.setGraphic(MainController.loadGraphic("edit-button.png"));
 				}
 				else {
 					StringBuilder sql = new StringBuilder();
@@ -497,15 +591,18 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = :" + child.getName());
 					}
-					target.textProperty().set("update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField));
-					button.setText("Generate Merge Update");
+					String result = "update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
+//					target.textProperty().set(result);
+					editor.setContent("text/sql", result);
+					button.setText("Merge Update");
+					button.setGraphic(MainController.loadGraphic("edit-button.png"));
 				}
 				MainController.getInstance().setChanged();
 			}
 		});
 	}
 
-	private void generateSelect(Button button, final JDBCService service, final TextArea target) {
+	private void generateSelect(Button button, final JDBCService service, final TextArea target, final AceEditor editor) {
 		button.addEventHandler(ActionEvent.ANY, new EventHandler<ActionEvent>() {
 			@Override
 			public void handle(ActionEvent event) {
@@ -560,8 +657,11 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						previous = type;
 					}
-					target.textProperty().set("select\n" + sql.toString() + "\nfrom" + from.toString());
-					button.setText("Generate Select");
+					String string = "select\n" + sql.toString() + "\nfrom" + from.toString();
+//					target.textProperty().set(string);
+					editor.setContent("text/sql", string);
+					button.setText("Select");
+					button.setGraphic(MainController.loadGraphic("edit-button.png"));
 				}
 				else {
 					Map<ComplexType, String> names = JDBCServiceManager.generateNames(Arrays.asList(service.getResults()));
@@ -573,9 +673,12 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t " + name + "." + EAIRepositoryUtils.uncamelify(child.getName()));
 					}
-					target.textProperty().set("select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getResults().getProperties())) + " " + name);
+					String result = "select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getResults().getProperties())) + " " + name;
+//					target.textProperty().set(result);
+					editor.setContent("text/sql", result);
 					if (service.getResults().getSuperType() != null) {
-						button.setText("Generate Join Select");
+						button.setText("Join Select");
+						button.setGraphic(MainController.loadGraphic("edit-button.png"));
 					}
 				}
 				MainController.getInstance().setChanged();
@@ -584,6 +687,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 	}
 
 	void syncBeforeSave(JDBCService service) {
-		MainController.getInstance().notify(service.setSql(area.getText()).toArray(new ValidationMessage[0]));
+//		MainController.getInstance().notify(service.setSql(area.getText()).toArray(new ValidationMessage[0]));
+		MainController.getInstance().notify(service.setSql(editor.getContent()).toArray(new ValidationMessage[0]));
 	}
 }
