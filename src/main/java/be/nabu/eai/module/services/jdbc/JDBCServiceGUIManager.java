@@ -427,18 +427,15 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 			@Override
 			public void changed(ObservableValue<? extends Boolean> arg0, Boolean arg1, Boolean arg2) {
 				if (!arg2) {
-					if (editor.getContent() != null && !editor.getContent().equals(service.getSql())) {
-						controller.notify(service.setSql(editor.getContent()).toArray(new ValidationMessage[0]));
-						getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
-						controller.getTree().refresh();
-						input.getTreeCell(input.rootProperty().get()).refresh();
-						output.getTreeCell(output.rootProperty().get()).refresh();
-						MainController.getInstance().setChanged();
-					}
+					controller.notify(service.setSql(editor.getContent()).toArray(new ValidationMessage[0]));
+					getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
+					controller.getTree().refresh();
+					input.getTreeCell(input.rootProperty().get()).refresh();
+					output.getTreeCell(output.rootProperty().get()).refresh();
 				}
 			}
 		});
-		editor.setContent("text/sql", service.getSql());
+		editor.setContent("text/sql", service.getSql() == null ? "" : service.getSql());
 		editor.subscribe(AceEditor.CHANGE, new EventHandler<Event>() {
 			@Override
 			public void handle(Event arg0) {
