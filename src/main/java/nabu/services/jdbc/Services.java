@@ -21,6 +21,7 @@ import javax.validation.constraints.NotNull;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlType;
 
+import be.nabu.eai.api.Comment;
 import be.nabu.eai.api.Hidden;
 import be.nabu.eai.module.services.jdbc.JDBCServiceManager;
 import be.nabu.eai.module.services.jdbc.RepositoryDataSourceResolver;
@@ -34,6 +35,7 @@ import be.nabu.libs.property.api.Value;
 import be.nabu.libs.services.ServiceRuntime;
 import be.nabu.libs.services.api.ExecutionContext;
 import be.nabu.libs.services.api.Service;
+import be.nabu.libs.services.api.ServiceDescription;
 import be.nabu.libs.services.api.ServiceException;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.JDBCServiceInstance;
@@ -822,6 +824,7 @@ public class Services {
 		}
 	}
 	
+	@ServiceDescription(description = "Update any number of correctly annotated objects in the given connection. They will be grouped by type and batch updated.")
 	public void update(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker, @WebParam(name = "language") String language) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
@@ -862,10 +865,12 @@ public class Services {
 		}
 	}
 	
+	@ServiceDescription(description = "Insert any number of correctly annotated objects into the given connection. They will be grouped by type and batch inserted.")
 	public void insert(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		insertOrUpdate(connection, transaction, instances, changeTracker, false);
 	}
 	
+	@ServiceDescription(description = "Merge any number of correctly annotated objects into the given connection. They will be grouped by type and batch merged.")
 	public void merge(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		insertOrUpdate(connection, transaction, instances, changeTracker, true);
 	}
@@ -916,6 +921,7 @@ public class Services {
 		}
 	}
 	
+	@ServiceDescription(description = "Delete any number of correctly annotated objects from the given connection. They will be grouped by type and batch deleted.")
 	public void delete(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
