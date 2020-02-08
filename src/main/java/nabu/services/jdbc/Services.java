@@ -21,12 +21,12 @@ import javax.validation.constraints.NotNull;
 import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlType;
 
-import be.nabu.eai.api.Comment;
 import be.nabu.eai.api.Hidden;
 import be.nabu.eai.module.services.jdbc.JDBCServiceManager;
 import be.nabu.eai.module.services.jdbc.RepositoryDataSourceResolver;
 import be.nabu.eai.repository.EAIRepositoryUtils;
 import be.nabu.eai.repository.EAIResourceRepository;
+import be.nabu.eai.repository.util.Filter;
 import be.nabu.eai.repository.util.SystemPrincipal;
 import be.nabu.libs.artifacts.api.Artifact;
 import be.nabu.libs.artifacts.api.DataSourceProviderArtifact;
@@ -678,7 +678,160 @@ public class Services {
 	}
 	
 	@SuppressWarnings("unchecked")
-	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "typeId") String typeId, @WebParam(name = "offset") Long offset, @WebParam(name = "limit") Integer limit, @WebParam(name = "orderBy") List<String> orderBy, @WebParam(name = "totalRowCount") Boolean totalRowCount, @WebParam(name = "hasNext") Boolean hasNext, @WebParam(name = "instanceId") Object id, @WebParam(name = "sql") String sql, @WebParam(name = "properties") List<KeyValuePair> properties, @WebParam(name = "language") String language, @WebParam(name = "typeAsHint") Boolean typeIdAsHint) throws ServiceException {
+	public JDBCSelectResult selectFiltered(@WebParam(name = "connection") String connection, 
+			@WebParam(name = "transaction") String transaction, 
+			@NotNull @WebParam(name = "typeId") String typeId, 
+			@WebParam(name = "offset") Long offset, 
+			@WebParam(name = "limit") Integer limit, 
+			@WebParam(name = "orderBy") List<String> orderBy, 
+			@WebParam(name = "totalRowCount") Boolean totalRowCount, 
+			@WebParam(name = "hasNext") Boolean hasNext,
+			@WebParam(name = "filters") List<Filter> filters,
+			@WebParam(name = "language") String language) throws ServiceException {
+		
+		String serviceId = typeId + ":generated.selectFiltered";
+		JDBCService jdbc = new JDBCService(serviceId);
+		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+		jdbc.setInputGenerated(true);
+		jdbc.setOutputGenerated(false);
+		
+		ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
+		if (resolve == null) {
+			throw new IllegalArgumentException("Could not find type: " + typeId);
+		}
+		jdbc.setResults(resolve);
+		
+		// triggers generation of input/output
+		String tableName = getTableName(resolve);
+		String sql = "select * from " + tableName + " t";
+		
+		if (filters != null && !filters.isEmpty()) {
+			String where = "";
+			int counter = 0;
+			for (Filter filter : filters) {
+				if (!where.isEmpty()) {
+					where += " and";
+				}
+				if (filter.isCaseInsensitive()) {
+					where += " lower(t." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
+				}
+				else {
+					where += " t." + JDBCServiceInstance.uncamelify(filter.getKey());
+				}
+				where += " " + filter.getOperator();
+				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
+					if (filter.getValues().size() == 1) {
+						if (filter.isCaseInsensitive()) {
+							where += " lower(:input" + counter++ + ")";
+						}
+						else {
+							where += " :input" + counter++;
+						}
+					}
+					else {
+						if ("<>".equals(filter.getOperator().trim())) {
+							where += " all(:input" + counter++ + ")";
+						}
+						else {
+							where += " any(:input" + counter++ + ")";
+						}
+					}
+				}
+			}
+			sql += " where" + where;
+		}
+		
+		// triggers generation of input, now we update it
+		jdbc.setSql(sql);
+		
+		if (filters != null && !filters.isEmpty()) {
+			int counter = 0;
+			for (Filter filter : filters) {
+				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
+					Element<?> source = resolve.get(filter.getKey());
+					Element<?> target = jdbc.getParameters().get("input" + counter++);
+					// inherit the type and properties
+					if (source != null && target != null) {
+						((ModifiableElement<?>) target).setType(source.getType());
+						Value<?>[] properties = source.getProperties();
+						for (Value<?> value : properties) {
+							if (!value.getProperty().getName().equals("name")) {
+								((ModifiableElement<?>) target).setProperty(value);
+							}
+						}
+						// if we have a list, let's set it
+						if (filter.getValues() != null && filter.getValues().size() >= 2) {
+							target.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
+						}
+					}
+				}
+			}
+		}
+		
+		ComplexContent newInstance = jdbc.getParameters().newInstance();
+		if (filters != null) {
+			int counter = 0;
+			for (Filter filter : filters) {
+				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
+					newInstance.set("input" + counter++, filter.getValues().size() == 1 ? filter.getValues().get(0) : filter.getValues());
+				}
+			}
+		}
+		
+		ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
+		input.set(JDBCService.CONNECTION, connection);
+		input.set(JDBCService.TRANSACTION, transaction);
+		input.set(JDBCService.PARAMETERS, newInstance);
+		input.set(JDBCService.LIMIT, limit);
+		input.set(JDBCService.OFFSET, offset);
+		input.set(JDBCService.ORDER_BY, orderBy);
+		input.set(JDBCService.TOTAL_ROW_COUNT, totalRowCount);
+		input.set(JDBCService.HAS_NEXT, hasNext);
+		
+		if (language != null && jdbc.getServiceInterface().getInputDefinition().get("language") != null) {
+			input.set("language", language);
+		}
+		
+		// make sure we validate the input
+		jdbc.setValidateInput(true);
+		
+		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
+		ComplexContent output = runtime.run(input);
+		
+		return new JDBCSelectResult(
+			(List<Object>) output.get(JDBCService.RESULTS), 
+			(Long) output.get(JDBCService.ROW_COUNT), 
+			(Long) output.get(JDBCService.TOTAL_ROW_COUNT), 
+			(Boolean) output.get(JDBCService.HAS_NEXT)
+		);
+	}
+	
+	public static String getTableName(ComplexType type) {
+		String tableName = null;
+		String collectionProperty = ValueUtils.getValue(CollectionNameProperty.getInstance(), type.getProperties());
+		if (collectionProperty != null) {
+			tableName = JDBCServiceInstance.uncamelify(collectionProperty);
+		}
+		else {
+			tableName = JDBCServiceInstance.uncamelify(type.getName());
+		}
+		return tableName;
+	}
+	
+	@SuppressWarnings("unchecked")
+	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, 
+			@WebParam(name = "transaction") String transaction, 
+			@WebParam(name = "typeId") String typeId, 
+			@WebParam(name = "offset") Long offset, 
+			@WebParam(name = "limit") Integer limit, 
+			@WebParam(name = "orderBy") List<String> orderBy, 
+			@WebParam(name = "totalRowCount") Boolean totalRowCount, 
+			@WebParam(name = "hasNext") Boolean hasNext, 
+			@WebParam(name = "instanceId") Object id, 
+			@WebParam(name = "sql") String sql, 
+			@WebParam(name = "properties") List<KeyValuePair> properties, 
+			@WebParam(name = "language") String language, 
+			@WebParam(name = "typeAsHint") Boolean typeIdAsHint) throws ServiceException {
 		String serviceId = typeId + ":generated.selectDynamic";
 		JDBCService jdbc = new JDBCService(serviceId);
 		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
