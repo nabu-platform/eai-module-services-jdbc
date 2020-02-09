@@ -1108,4 +1108,40 @@ public class Services {
 			runtime.run(input);
 		}		
 	}
+	
+	@ServiceDescription(description = "Delete any number of correctly annotated objects from the given connection. They will be grouped by type and batch deleted.")
+	public void deleteById(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @NotNull @WebParam(name = "typeId") String typeId, @WebParam(name = "ids") List<Object> ids, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
+		if (typeId != null && ids != null && !ids.isEmpty()) {
+			ComplexType type = (ComplexType) EAIResourceRepository.getInstance().resolve(typeId);
+			Element<?> primaryKey = null;
+			for (Element<?> child : TypeUtils.getAllChildren(type)) {
+				Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
+				if (property != null && property.getValue()) {
+					primaryKey = child;
+					break;
+				}
+			}
+			if (primaryKey == null) {
+				throw new IllegalArgumentException("Could not find primary key");
+			}
+			
+			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
+			id += ":generated.deleteById";
+			JDBCService jdbc = new JDBCService(id);
+			jdbc.setChangeTracker(toChangeTracker(changeTracker));
+			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+			jdbc.setInputGenerated(true);
+			jdbc.setOutputGenerated(false);
+			jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = any(:ids)");
+			ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
+			Element<?> element = jdbc.getParameters().get("ids");
+			((ModifiableElement<?>) element).setType(primaryKey.getType());
+			element.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
+			input.set(JDBCService.CONNECTION, connection);
+			input.set(JDBCService.TRANSACTION, transaction);
+			input.set(JDBCService.PARAMETERS + "/ids", ids);
+			ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
+			runtime.run(input);
+		}		
+	}
 }
