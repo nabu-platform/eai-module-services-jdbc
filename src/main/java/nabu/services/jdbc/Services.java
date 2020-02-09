@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
@@ -708,9 +709,21 @@ public class Services {
 		if (filters != null && !filters.isEmpty()) {
 			String where = "";
 			int counter = 0;
-			for (Filter filter : filters) {
+			boolean openOr = false;
+			for (int i = 0; i < filters.size(); i++) {
+				Filter filter = filters.get(i);
 				if (!where.isEmpty()) {
-					where += " and";
+					if (filter.isOr()) {
+						where += " or";
+					}
+					else {
+						where += " and";
+					}
+				}
+				// start the or
+				if (i < filters.size() - 1 && !openOr && filters.get(i + 1).isOr()) {
+					where += " (";
+					openOr = true;
 				}
 				if (filter.isCaseInsensitive()) {
 					where += " lower(t." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
@@ -737,6 +750,15 @@ public class Services {
 						}
 					}
 				}
+				// check if we want to close an or
+				if (i < filters.size() - 1 && openOr && !filters.get(i + 1).isOr()) {
+					where += ")";
+					openOr = false;
+				}
+			}
+			if (openOr) {
+				where += ")";
+				openOr = false;
 			}
 			sql += " where" + where;
 		}
@@ -1139,7 +1161,7 @@ public class Services {
 			element.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
 			input.set(JDBCService.CONNECTION, connection);
 			input.set(JDBCService.TRANSACTION, transaction);
-			input.set(JDBCService.PARAMETERS + "/ids", ids);
+			input.set(JDBCService.PARAMETERS + "[0]/ids", ids);
 			ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 			runtime.run(input);
 		}		
