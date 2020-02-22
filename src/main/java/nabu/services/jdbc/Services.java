@@ -447,17 +447,19 @@ public class Services {
 		StringBuilder sql = new StringBuilder();
 		String idField = null;
 		for (Element<?> child : TypeUtils.getAllChildren(type)) {
+			// we don't want to update the primary, but we do need to keep track of the name of the field so we can use it to target the update
+			Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
+			if (property != null && property.getValue()) {
+				idField = child.getName();
+				continue;
+			}
+			
 			// if it is generated, we don't update it by default
 			Value<Boolean> generatedProperty = child.getProperty(GeneratedProperty.getInstance());
 			if (generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) {
 				continue;
 			}
 			
-			Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
-			if (property != null && property.getValue()) {
-				idField = child.getName();
-				continue;
-			}
 			if (!sql.toString().isEmpty()) {
 				sql.append(",\n");
 			}
@@ -712,6 +714,9 @@ public class Services {
 			boolean openOr = false;
 			for (int i = 0; i < filters.size(); i++) {
 				Filter filter = filters.get(i);
+				if (filter.getKey() == null) {
+					continue;
+				}
 				if (!where.isEmpty()) {
 					if (filter.isOr()) {
 						where += " or";

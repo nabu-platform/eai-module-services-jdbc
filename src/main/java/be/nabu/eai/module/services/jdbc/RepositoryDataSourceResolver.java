@@ -20,29 +20,27 @@ public class RepositoryDataSourceResolver implements DynamicDataSourceResolver {
 		if (runtime != null) {
 			List<DataSourceWithDialectProviderArtifact> artifacts = EAIResourceRepository.getInstance().getArtifacts(DataSourceWithDialectProviderArtifact.class);
 
-			// we search through the entire server, if a pool has been set up a context that matches, the longest match wins
-			String longest = null;
-			for (DataSourceWithDialectProviderArtifact artifact : artifacts) {
-				if (artifact.getContext() != null && (forId.equals(artifact.getContext()) || forId.startsWith(artifact.getContext() + "."))) {
-					if (longest == null || artifact.getContext().length() > longest.length()) {
-						longest = artifact.getId();
-					}
-				}
-			}
+			// let's check if a pool has been explicitly configured for this artifact
+			String longest = getContextualFor(forId, artifacts);
 			if (longest != null) {
 				return longest;
 			}
 			
-			// we did not find a match based on explicit context, try implicit
+			// we did not find for the explicit artifact, lets try the service context
 			String context = ServiceUtils.getServiceContext(runtime);
-			String toMatch = context.replaceAll(REGEX, "$1");
-			List<DataSourceWithDialectProviderArtifact> hits = new ArrayList<DataSourceWithDialectProviderArtifact>();
-			for (DataSourceWithDialectProviderArtifact artifact : artifacts) {
-				String possible = artifact.getId().replaceAll(REGEX, "$1");
-				if (toMatch.equals(possible)) {
-					hits.add(artifact);
-				}
+			// let's check if a pool has been explicitly configured for this service context
+			longest = getContextualFor(context, artifacts);
+			if (longest != null) {
+				return longest;
 			}
+			
+			// get related hits for the service context
+			List<DataSourceWithDialectProviderArtifact> hits = getRelatedFor(context, artifacts);
+			
+			if (hits.isEmpty()) {
+				hits = getRelatedFor(forId, artifacts);
+			}
+
 			// if we have exactly one hit, return that
 			if (hits.size() == 1) {
 				return hits.get(0).getId();
@@ -72,6 +70,41 @@ public class RepositoryDataSourceResolver implements DynamicDataSourceResolver {
 			}
 		}
 		return null;
+	}
+
+	private String getContextualFor(String forId, List<DataSourceWithDialectProviderArtifact> artifacts) {
+		String longest = null;
+		for (DataSourceWithDialectProviderArtifact artifact : artifacts) {
+			if (artifact.getContext() != null) {
+				for (String context : artifact.getContext().split("[\\s]*,[\\s]*")) {
+					if (forId.equals(context) || forId.startsWith(context + ".")) {
+						if (longest == null || context.length() > longest.length()) {
+							longest = artifact.getId();
+						}
+					}
+				}
+			}
+		}
+		return longest;
+	}
+	
+	private List<DataSourceWithDialectProviderArtifact> getRelatedFor(String forId, List<DataSourceWithDialectProviderArtifact> artifacts) {
+		String longest = null;
+		List<DataSourceWithDialectProviderArtifact> matches = new ArrayList<DataSourceWithDialectProviderArtifact>();
+		for (DataSourceWithDialectProviderArtifact artifact : artifacts) {
+			String id = artifact.getId();
+			while (id != null) {
+				if (forId.startsWith(id)) {
+					if (longest == null || id.length() > longest.length()) {
+						longest = id;
+						matches.add(artifact);
+					}
+				}
+				int index = id.lastIndexOf('.');
+				id = index <= 0 ? null : id.substring(0, index);
+			}
+		}
+		return matches;
 	}
 
 }

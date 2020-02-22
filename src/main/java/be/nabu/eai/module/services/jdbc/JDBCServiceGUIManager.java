@@ -550,13 +550,20 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					StringBuilder sql = new StringBuilder();
 					String idField = null;
 					for (Element<?> child : TypeUtils.getAllChildren(service.getParameters())) {
+						// we don't want to update the primary, but we do need to keep track of the name of the field so we can use it to target the update
+						Value<Boolean> primary = child.getProperty(PrimaryKeyProperty.getInstance());
+						if (primary != null && primary.getValue()) {
+							idField = child.getName();
+							continue;
+						}
+						else if (idField == null && child.getName().equalsIgnoreCase("id")) {
+							idField = child.getName();
+							continue;
+						}
+						
 						// if it is generated, we don't update it by default
 						Value<Boolean> property = child.getProperty(GeneratedProperty.getInstance());
 						if (property != null && property.getValue() != null && property.getValue()) {
-							continue;
-						}
-						if (child.getName().equalsIgnoreCase("id")) {
-							idField = child.getName();
 							continue;
 						}
 						if (!sql.toString().isEmpty()) {
@@ -574,13 +581,20 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					StringBuilder sql = new StringBuilder();
 					String idField = null;
 					for (Element<?> child : TypeUtils.getAllChildren(service.getParameters())) {
+						// we don't want to update the primary, but we do need to keep track of the name of the field so we can use it to target the update
+						Value<Boolean> primary = child.getProperty(PrimaryKeyProperty.getInstance());
+						if (primary != null && primary.getValue()) {
+							idField = child.getName();
+							continue;
+						}
+						else if (idField == null && child.getName().equalsIgnoreCase("id")) {
+							idField = child.getName();
+							continue;
+						}
+						
 						// if it is generated, we don't update it by default
 						Value<Boolean> property = child.getProperty(GeneratedProperty.getInstance());
 						if (property != null && property.getValue() != null && property.getValue()) {
-							continue;
-						}
-						if (child.getName().equalsIgnoreCase("id")) {
-							idField = child.getName();
 							continue;
 						}
 						if (!sql.toString().isEmpty()) {
