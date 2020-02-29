@@ -9,7 +9,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
-import javafx.application.Platform;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
@@ -58,6 +57,7 @@ import be.nabu.libs.property.api.Property;
 import be.nabu.libs.property.api.Value;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.jdbc.JDBCService;
+import be.nabu.libs.services.jdbc.JDBCUtils;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
 import be.nabu.libs.types.TypeUtils;
 import be.nabu.libs.types.api.ComplexType;
@@ -640,6 +640,10 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 							inherited.clear();
 						}
 						for (Element<?> child : type) {
+							// if this is not the same child as we get back from the top level, we probably restricted it at some point
+							if (!child.equals(service.getResults().get(child.getName()))) {
+								continue;
+							}
 							if (value != null && value) {
 								inherited.add(child);
 							}
@@ -661,7 +665,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						String typeName = EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(type.getProperties()));
 						if (previous != null) {
 							String previousName = names.get(previous);
-							from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + ".id = " + previousName + ".id");
+							List<String> binding = JDBCUtils.getBinding(type, previous);
+							from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + "." + EAIRepositoryUtils.uncamelify(binding.get(0)) + " = " + previousName + "." + EAIRepositoryUtils.uncamelify(binding.get(1)));
 						}
 						else {
 							from.append(" ~").append(typeName + " " + names.get(type));

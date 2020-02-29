@@ -9,7 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
-import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
@@ -40,6 +40,7 @@ import be.nabu.libs.services.api.ServiceDescription;
 import be.nabu.libs.services.api.ServiceException;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.JDBCServiceInstance;
+import be.nabu.libs.services.jdbc.JDBCUtils;
 import be.nabu.libs.services.jdbc.api.ChangeTracker;
 import be.nabu.libs.services.jdbc.api.DataSourceWithAffixes;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
@@ -57,6 +58,7 @@ import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.api.KeyValuePair;
 import be.nabu.libs.types.api.ModifiableElement;
 import be.nabu.libs.types.api.SimpleType;
+import be.nabu.libs.types.api.Type;
 import be.nabu.libs.types.api.TypedKeyValuePair;
 import be.nabu.libs.types.base.ValueImpl;
 import be.nabu.libs.types.properties.CollectionNameProperty;
@@ -394,7 +396,8 @@ public class Services {
 	
 	@SuppressWarnings("unchecked")
 	private Map<ComplexType, List<ComplexContent>> group(List<Object> instances) {
-		Map<ComplexType, List<ComplexContent>> grouped = new HashMap<ComplexType, List<ComplexContent>>();
+		// especially for insertion, the order _is_ important, hence linked
+		Map<ComplexType, List<ComplexContent>> grouped = new LinkedHashMap<ComplexType, List<ComplexContent>>();
 		for (Object instance : instances) {
 			if (instance != null) {
 				if (!(instance instanceof ComplexContent)) {
@@ -403,20 +406,60 @@ public class Services {
 						throw new IllegalArgumentException("Can not be cast to complex content");
 					}
 				}
+				// if we are working with extensions, we need to figure out how the tables are laid out, we do this based on the collection name property
+				// each type with its own collection name is considered to be a separate table
 				ComplexType type = ((ComplexContent) instance).getType();
-				if (!grouped.containsKey(type)) {
-					grouped.put(type, new ArrayList<ComplexContent>());
+
+				List<ComplexType> typesToAdd = getAllTypes(type);
+				
+				// the types are from child to parent, we need the other way around assuming the tables are linked with foreign keys, then the insertion order is important
+				Collections.reverse(typesToAdd);
+	
+				for (ComplexType typeToAdd : typesToAdd) {
+					addInstance(grouped, instance, typeToAdd);
 				}
-				grouped.get(type).add((ComplexContent) instance);
 			}
 		}
 		return grouped;
+	}
+
+	private List<ComplexType> getAllTypes(ComplexType type) {
+		// we first build a list of all the types we need to add
+		List<ComplexType> typesToAdd = new ArrayList<ComplexType>();
+		// we assume our "outer" type always has its own table, if it extends other types, we need to dig deeper if parts of the values have to be stored in different tables
+		// but at the very least the local extension fields will have to be in its own table
+		typesToAdd.add(type);
+		
+		// we check supertypes that have specifically named tables
+		while (type.getSuperType() != null) {
+			Type superType = type.getSuperType();
+			if (superType instanceof ComplexType) {
+				String collectionName = ValueUtils.getValue(CollectionNameProperty.getInstance(), superType.getProperties());
+				// we have part of the end result that resides in a dedicated table
+				if (collectionName != null) {
+					typesToAdd.add((ComplexType) superType);
+				}
+				type = (ComplexType) superType;
+			}
+			// if we ever extend a simple type, we stop here
+			else {
+				break;
+			}
+		}
+		return typesToAdd;
+	}
+
+	private void addInstance(Map<ComplexType, List<ComplexContent>> grouped, Object instance, ComplexType type) {
+		if (!grouped.containsKey(type)) {
+			grouped.put(type, new ArrayList<ComplexContent>());
+		}
+		grouped.get(type).add((ComplexContent) instance);
 	}
 	
 	private String generateInsert(ComplexType type, boolean merge) {
 		StringBuilder sql = new StringBuilder();
 		String idField = null;
-		for (Element<?> child : TypeUtils.getAllChildren(type)) {
+		for (Element<?> child : JDBCUtils.getFieldsInTable(type)) {
 			// if it is generated, we don't insert it by default
 			Value<Boolean> generatedProperty = child.getProperty(GeneratedProperty.getInstance());
 			if (generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) {
@@ -446,7 +489,7 @@ public class Services {
 	private String generateUpdate(ComplexType type) {
 		StringBuilder sql = new StringBuilder();
 		String idField = null;
-		for (Element<?> child : TypeUtils.getAllChildren(type)) {
+		for (Element<?> child : JDBCUtils.getFieldsInTable(type)) {
 			// we don't want to update the primary, but we do need to keep track of the name of the field so we can use it to target the update
 			Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
 			if (property != null && property.getValue()) {
@@ -526,7 +569,8 @@ public class Services {
 			String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
 			if (previous != null) {
 				String previousName = names.get(previous);
-				from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + ".id = " + previousName + ".id");
+				List<String> binding = JDBCUtils.getBinding(type, previous);
+				from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + "." + EAIRepositoryUtils.uncamelify(binding.get(0)) + " = " + previousName + "." + EAIRepositoryUtils.uncamelify(binding.get(1)));
 			}
 			else {
 				from.append(" ~").append(typeName + " " + names.get(type));
@@ -1062,6 +1106,14 @@ public class Services {
 			List<ComplexContent> contents = group.get(type);
 			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
 			id += ":generated." + (merge ? "merge" : "insert");
+			String typeConnection = connection;
+			// do a lookup for providers that are within the same root folder (= application) as the root service
+			if (typeConnection == null) {
+				typeConnection = new RepositoryDataSourceResolver().getDataSourceId(id);
+			}
+			if (typeConnection == null) {
+				throw new ServiceException("JDBC-DYN-1", "Could not figure out the correct jdbc connection to use");
+			}
 			JDBCService jdbc = new JDBCService(id);
 			jdbc.setChangeTracker(toChangeTracker(changeTracker));
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
@@ -1083,7 +1135,7 @@ public class Services {
 				}
 			}
 			ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
-			input.set(JDBCService.CONNECTION, connection);
+			input.set(JDBCService.CONNECTION, typeConnection);
 			input.set(JDBCService.TRANSACTION, transaction);
 			input.set(JDBCService.PARAMETERS, contents);
 			ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
@@ -1106,7 +1158,7 @@ public class Services {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
 			Element<?> primaryKey = null;
-			for (Element<?> child : TypeUtils.getAllChildren(type)) {
+			for (Element<?> child : JDBCUtils.getFieldsInTable(type)) {
 				Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
 				if (property != null && property.getValue()) {
 					primaryKey = child;
@@ -1140,35 +1192,37 @@ public class Services {
 	public void deleteById(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @NotNull @WebParam(name = "typeId") String typeId, @WebParam(name = "ids") List<Object> ids, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		if (typeId != null && ids != null && !ids.isEmpty()) {
 			ComplexType type = (ComplexType) EAIResourceRepository.getInstance().resolve(typeId);
-			Element<?> primaryKey = null;
-			for (Element<?> child : TypeUtils.getAllChildren(type)) {
-				Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
-				if (property != null && property.getValue()) {
-					primaryKey = child;
-					break;
+			for (ComplexType typeToDelete : getAllTypes(type)) {
+				Element<?> primaryKey = null;
+				for (Element<?> child : JDBCUtils.getFieldsInTable(typeToDelete)) {
+					Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
+					if (property != null && property.getValue()) {
+						primaryKey = child;
+						break;
+					}
 				}
+				if (primaryKey == null) {
+					throw new IllegalArgumentException("Could not find primary key");
+				}
+				
+				String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
+				id += ":generated.deleteById";
+				JDBCService jdbc = new JDBCService(id);
+				jdbc.setChangeTracker(toChangeTracker(changeTracker));
+				jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+				jdbc.setInputGenerated(true);
+				jdbc.setOutputGenerated(false);
+				jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(typeToDelete.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = any(:ids)");
+				ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
+				Element<?> element = jdbc.getParameters().get("ids");
+				((ModifiableElement<?>) element).setType(primaryKey.getType());
+				element.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
+				input.set(JDBCService.CONNECTION, connection);
+				input.set(JDBCService.TRANSACTION, transaction);
+				input.set(JDBCService.PARAMETERS + "[0]/ids", ids);
+				ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
+				runtime.run(input);
 			}
-			if (primaryKey == null) {
-				throw new IllegalArgumentException("Could not find primary key");
-			}
-			
-			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
-			id += ":generated.deleteById";
-			JDBCService jdbc = new JDBCService(id);
-			jdbc.setChangeTracker(toChangeTracker(changeTracker));
-			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
-			jdbc.setInputGenerated(true);
-			jdbc.setOutputGenerated(false);
-			jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = any(:ids)");
-			ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
-			Element<?> element = jdbc.getParameters().get("ids");
-			((ModifiableElement<?>) element).setType(primaryKey.getType());
-			element.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
-			input.set(JDBCService.CONNECTION, connection);
-			input.set(JDBCService.TRANSACTION, transaction);
-			input.set(JDBCService.PARAMETERS + "[0]/ids", ids);
-			ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
-			runtime.run(input);
 		}		
 	}
 }
