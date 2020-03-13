@@ -23,6 +23,7 @@ import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlType;
 
 import be.nabu.eai.api.Hidden;
+import be.nabu.eai.api.NamingConvention;
 import be.nabu.eai.module.services.jdbc.JDBCServiceManager;
 import be.nabu.eai.module.services.jdbc.RepositoryDataSourceResolver;
 import be.nabu.eai.repository.EAIRepositoryUtils;
@@ -411,7 +412,7 @@ public class Services {
 				ComplexType type = ((ComplexContent) instance).getType();
 
 				List<ComplexType> typesToAdd = getAllTypes(type);
-				
+
 				// the types are from child to parent, we need the other way around assuming the tables are linked with foreign keys, then the insertion order is important
 				Collections.reverse(typesToAdd);
 	
@@ -430,14 +431,24 @@ public class Services {
 		// but at the very least the local extension fields will have to be in its own table
 		typesToAdd.add(type);
 		
-		// we check supertypes that have specifically named tables
+		List<String> collectionNames = new ArrayList<String>();
+		// we want to add the root collection
+		String rootCollection = ValueUtils.getValue(CollectionNameProperty.getInstance(), type.getProperties());
+		if (rootCollection == null) {
+			rootCollection = NamingConvention.UNDERSCORE.apply(type.getName());
+		}
+		collectionNames.add(rootCollection);
+		
+		// we check supertypes that have specifically named tables that have not yet been included
+		// child can use restrictions to restrict parent types, so the child is "correcter" in a given context
 		while (type.getSuperType() != null) {
 			Type superType = type.getSuperType();
 			if (superType instanceof ComplexType) {
 				String collectionName = ValueUtils.getValue(CollectionNameProperty.getInstance(), superType.getProperties());
 				// we have part of the end result that resides in a dedicated table
-				if (collectionName != null) {
+				if (collectionName != null && collectionNames.indexOf(collectionName) < 0) {
 					typesToAdd.add((ComplexType) superType);
+					collectionNames.add(collectionName);
 				}
 				type = (ComplexType) superType;
 			}
@@ -509,7 +520,7 @@ public class Services {
 			sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = :" + child.getName());
 		}
 		if (idField == null) {
-			throw new IllegalArgumentException("Could not determine primary key field");
+			throw new IllegalArgumentException("Could not determine primary key field for type: " + (type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous"));
 		}
 		return "update ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
 	}
