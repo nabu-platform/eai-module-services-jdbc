@@ -6,6 +6,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -69,7 +70,9 @@ import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
 import be.nabu.libs.types.properties.NameProperty;
 import be.nabu.libs.types.properties.PrimaryKeyProperty;
+import be.nabu.libs.types.properties.RestrictProperty;
 import be.nabu.libs.types.properties.TimezoneProperty;
+import be.nabu.libs.types.structure.Structure;
 import nabu.services.jdbc.types.Page;
 import nabu.services.jdbc.types.Paging;
 import nabu.services.jdbc.types.StoredProcedure;
@@ -439,15 +442,30 @@ public class Services {
 		}
 		collectionNames.add(rootCollection);
 		
+		// we must keep a runny tally of restrictions because in an extension you can restrict something from another table
+		// if you are restricting the same table, this works because we take the most specific definition
+		// if we just keep the original type for a different table however, we lose this restriction information
+		// this is why we create ad hoc extensions to do this
+		List<String> restrictions = new ArrayList<String>();
 		// we check supertypes that have specifically named tables that have not yet been included
 		// child can use restrictions to restrict parent types, so the child is "correcter" in a given context
 		while (type.getSuperType() != null) {
+			// make sure we take into account restrictions we imposed on the supertype
+			String value = ValueUtils.getValue(RestrictProperty.getInstance(), type.getProperties());
+			if (value != null && !value.trim().isEmpty()) {
+				restrictions.addAll(Arrays.asList(value.split("[\\s]*,[\\s]*")));
+			}
 			Type superType = type.getSuperType();
 			if (superType instanceof ComplexType) {
 				String collectionName = ValueUtils.getValue(CollectionNameProperty.getInstance(), superType.getProperties());
 				// we have part of the end result that resides in a dedicated table
 				if (collectionName != null && collectionNames.indexOf(collectionName) < 0) {
-					typesToAdd.add((ComplexType) superType);
+					if (restrictions.isEmpty()) {
+						typesToAdd.add((ComplexType) superType);
+					}
+					else {
+						typesToAdd.add(restrict((ComplexType) superType, restrictions));
+					}
 					collectionNames.add(collectionName);
 				}
 				type = (ComplexType) superType;
@@ -458,6 +476,26 @@ public class Services {
 			}
 		}
 		return typesToAdd;
+	}
+
+	private ComplexType restrict(ComplexType superType, List<String> restrictions) {
+		Structure structure = new Structure();
+		structure.setProperty(superType.getProperties());
+		structure.setSuperType(superType);
+		structure.setProperty(new ValueImpl<String>(RestrictProperty.getInstance(), join(restrictions)));
+		// we add this so we can unwrap() it later
+		structure.setProperty(new ValueImpl<Boolean>(HiddenProperty.getInstance(), true));
+		return structure;
+	}
+	private String join(List<String> restrictions) {
+		StringBuilder builder = new StringBuilder();
+		for (String restriction : restrictions) {
+			if (!builder.toString().isEmpty()) {
+				builder.append(",");
+			}
+			builder.append(restriction);
+		}
+		return builder.toString();
 	}
 
 	private void addInstance(Map<ComplexType, List<ComplexContent>> grouped, Object instance, ComplexType type) {
@@ -759,9 +797,26 @@ public class Services {
 		}
 		jdbc.setResults(resolve);
 		
-		// triggers generation of input/output
-		String tableName = getTableName(resolve);
-		String sql = "select * from " + tableName + " t";
+		// build FROM
+		StringBuilder from = new StringBuilder();
+		ComplexType previous = null;
+		List<ComplexType> types = getAllTypes(resolve);
+		Collections.reverse(types);
+		Map<ComplexType, String> names = JDBCServiceManager.generateNames(types);
+		for (ComplexType type : types) {
+			String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
+			if (previous != null) {
+				String previousName = names.get(previous);
+				List<String> binding = JDBCUtils.getBinding(type, previous);
+				from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + "." + EAIRepositoryUtils.uncamelify(binding.get(0)) + " = " + previousName + "." + EAIRepositoryUtils.uncamelify(binding.get(1)));
+			}
+			else {
+				from.append(" ~").append(typeName + " " + names.get(type));
+			}
+			previous = type;
+		}
+		
+		String sql = "select * from " + from.toString();
 		
 		if (filters != null && !filters.isEmpty()) {
 			String where = "";
@@ -785,11 +840,22 @@ public class Services {
 					where += " (";
 					openOr = true;
 				}
+				ComplexType containingType = null;
+				// we need to figure out which alias it belongs to so which table
+				for (ComplexType type : types) {
+					if (type.get(filter.getKey()) != null) {
+						containingType = type;
+						break;
+					}
+				}
+				if (containingType == null) {
+					throw new IllegalStateException("Could not find the complex type that contains the field: " + filter.getKey());
+				}
 				if (filter.isCaseInsensitive()) {
-					where += " lower(t." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
+					where += " lower(" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
 				}
 				else {
-					where += " t." + JDBCServiceInstance.uncamelify(filter.getKey());
+					where += " " + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey());
 				}
 				where += " " + filter.getOperator();
 				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
@@ -822,7 +888,6 @@ public class Services {
 			}
 			sql += " where" + where;
 		}
-		
 		// triggers generation of input, now we update it
 		jdbc.setSql(sql);
 		
@@ -1059,6 +1124,15 @@ public class Services {
 		}
 	}
 	
+	// when grouping we wrap the types potentially in other types due to restrictions
+	// we need those wrapped types specifically for generating update statements and the likes
+	// however, our instances are not of that type but of the supertype
+	// to avoid conversion issues, we unwrap it again when defining the input
+	private ComplexType unwrap(ComplexType type) {
+		Boolean value = ValueUtils.getValue(HiddenProperty.getInstance(), type.getProperties());
+		return value != null && value && type.getSuperType() != null ? (ComplexType) type.getSuperType() : type;
+	}
+	// in the future we might add a "skip types", this for example for managed crud providers who have to currently do a full update afterwards (e.g. node), this currently results in two updates
 	@ServiceDescription(description = "Update any number of correctly annotated objects in the given connection. They will be grouped by type and batch updated.")
 	public void update(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker, @WebParam(name = "language") String language) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
@@ -1071,7 +1145,7 @@ public class Services {
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
-			jdbc.setParameters(type);
+			jdbc.setParameters(unwrap(type));
 			jdbc.setSql(generateUpdate(type));
 			ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
 			input.set(JDBCService.CONNECTION, connection);
@@ -1130,7 +1204,7 @@ public class Services {
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
-			jdbc.setParameters(type);
+			jdbc.setParameters(unwrap(type));
 			jdbc.setSql(generateInsert(type, merge));
 			Element<?> primaryKey = null;
 			// let's get the primary key to see if we have a generated column
@@ -1188,7 +1262,7 @@ public class Services {
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
-			jdbc.setParameters(type);
+			jdbc.setParameters(unwrap(type));
 			jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = :" + primaryKey.getName());
 			ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
 			input.set(JDBCService.CONNECTION, connection);
