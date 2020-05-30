@@ -166,7 +166,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		iface.setOrientation(Orientation.HORIZONTAL);
 		main.getItems().addAll(top, iface);
 
-		ElementSelectionListener elementSelectionListener = new ElementSelectionListener(controller, false, true, FormatProperty.getInstance(), TimezoneProperty.getInstance(), MinOccursProperty.getInstance(), MaxOccursProperty.getInstance(), PrimaryKeyProperty.getInstance(), CollectionNameProperty.getInstance());
+		ElementSelectionListener elementSelectionListener = new ElementSelectionListener(controller, false, true, FormatProperty.getInstance(), TimezoneProperty.getInstance(), 
+			MinOccursProperty.getInstance(), MaxOccursProperty.getInstance(), PrimaryKeyProperty.getInstance(), CollectionNameProperty.getInstance());
 		elementSelectionListener.setForceAllowUpdate(true);
 		elementSelectionListener.setActualId(entry.getId());
 		

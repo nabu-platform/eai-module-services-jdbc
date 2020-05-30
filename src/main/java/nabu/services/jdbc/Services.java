@@ -509,16 +509,17 @@ public class Services {
 		StringBuilder sql = new StringBuilder();
 		String idField = null;
 		for (Element<?> child : JDBCUtils.getFieldsInTable(type)) {
-			// if it is generated, we don't insert it by default
-			Value<Boolean> generatedProperty = child.getProperty(GeneratedProperty.getInstance());
-			if (generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) {
-				continue;
-			}
-			
 			Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
 			if (property != null && property.getValue()) {
 				idField = child.getName();
 			}
+			
+			// if it is generated, we don't insert it by default (but we do merge!)
+			Value<Boolean> generatedProperty = child.getProperty(GeneratedProperty.getInstance());
+			if (!merge && generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) {
+				continue;
+			}
+			
 			if (!sql.toString().isEmpty()) {
 				sql.append(",\n");
 			}
@@ -1297,14 +1298,25 @@ public class Services {
 				jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 				jdbc.setInputGenerated(true);
 				jdbc.setOutputGenerated(false);
-				jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(typeToDelete.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = any(:ids)");
+				String tableName = EAIRepositoryUtils.uncamelify(getName(typeToDelete.getProperties())).toLowerCase();
+				String keyName = EAIRepositoryUtils.uncamelify(primaryKey.getName());
+				jdbc.setSql("delete from ~" + tableName + " where " + keyName + " = :" + keyName);
 				ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
-				Element<?> element = jdbc.getParameters().get("ids");
+				Element<?> element = jdbc.getParameters().get(keyName);
 				((ModifiableElement<?>) element).setType(primaryKey.getType());
-				element.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
+				// make sure we mark it as primary for change tracking purposes
+				element.setProperty(new ValueImpl<Boolean>(PrimaryKeyProperty.getInstance(), true));
+				// we also need a correct collection name for change tracking
+				element.setProperty(new ValueImpl<String>(CollectionNameProperty.getInstance(), tableName));
+				
+				// deleting with a list of ids is not compatible with change tracking
+				// deleting with a list of parameters with a single id each, is compatible!
+//				element.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
 				input.set(JDBCService.CONNECTION, connection);
 				input.set(JDBCService.TRANSACTION, transaction);
-				input.set(JDBCService.PARAMETERS + "[0]/ids", ids);
+				for (int i = 0; i < ids.size(); i++) {
+					input.set(JDBCService.PARAMETERS + "[" + i + "]/" + keyName, ids);
+				}
 				ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 				runtime.run(input);
 			}

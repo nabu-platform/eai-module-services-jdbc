@@ -74,11 +74,13 @@ public class RepositoryDataSourceResolver implements DynamicDataSourceResolver {
 
 	private String getContextualFor(String forId, List<DataSourceWithDialectProviderArtifact> artifacts) {
 		String longest = null;
+		String longestContext = null;
 		for (DataSourceWithDialectProviderArtifact artifact : artifacts) {
 			if (artifact.getContext() != null) {
 				for (String context : artifact.getContext().split("[\\s]*,[\\s]*")) {
 					if (forId.equals(context) || forId.startsWith(context + ".")) {
-						if (longest == null || context.length() > longest.length()) {
+						if (longestContext == null || context.length() > longestContext.length()) {
+							longestContext = context;
 							longest = artifact.getId();
 						}
 					}
