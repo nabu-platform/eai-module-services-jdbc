@@ -84,7 +84,7 @@ public class StoredProcedureManager extends JAXBArtifactManager<StoredProcedureC
 				node.setArtifactClass(DefinedStructure.class);
 				node.setArtifact((DefinedStructure) artifact.getResults());
 				node.setLeaf(true);
-				Entry results = new MemoryEntry(parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.RESULTS, JDBCService.RESULTS);
+				Entry results = new MemoryEntry(artifact.getId(), parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.RESULTS, JDBCService.RESULTS);
 				((DefinedStructure) artifact.getResults()).setId(results.getId());
 				node.setEntry(results);
 				parent.addChildren(results);
@@ -96,7 +96,7 @@ public class StoredProcedureManager extends JAXBArtifactManager<StoredProcedureC
 				node.setArtifactClass(DefinedStructure.class);
 				node.setArtifact((DefinedStructure) artifact.getParameters());
 				node.setLeaf(true);
-				Entry results = new MemoryEntry(parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.PARAMETERS, JDBCService.PARAMETERS);
+				Entry results = new MemoryEntry(artifact.getId(), parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.PARAMETERS, JDBCService.PARAMETERS);
 				((DefinedStructure) artifact.getParameters()).setId(results.getId());
 				node.setEntry(results);
 				parent.addChildren(results);
@@ -108,7 +108,7 @@ public class StoredProcedureManager extends JAXBArtifactManager<StoredProcedureC
 				node.setArtifactClass(DefinedStructure.class);
 				node.setArtifact((DefinedStructure) artifact.getReturnValue());
 				node.setLeaf(true);
-				Entry results = new MemoryEntry(parent.getRepository(), parent, node, parent.getId() + ".return", "return");
+				Entry results = new MemoryEntry(artifact.getId(), parent.getRepository(), parent, node, parent.getId() + ".return", "return");
 				((DefinedStructure) artifact.getReturnValue()).setId(results.getId());
 				node.setEntry(results);
 				parent.addChildren(results);

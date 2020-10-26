@@ -39,6 +39,7 @@ import be.nabu.libs.resources.api.WritableResource;
 import be.nabu.libs.services.api.DefinedService;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.jdbc.JDBCService;
+import be.nabu.libs.services.jdbc.JDBCUtils;
 import be.nabu.libs.services.jdbc.api.ChangeTracker;
 import be.nabu.libs.services.pojo.POJOUtils;
 import be.nabu.libs.services.pojo.POJOUtils.ServiceInvocationHandler;
@@ -265,7 +266,7 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 				node.setArtifactClass(DefinedStructure.class);
 				node.setArtifact((DefinedStructure) artifact.getParameters());
 				node.setLeaf(true);
-				Entry parameters = new MemoryEntry(parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.PARAMETERS, JDBCService.PARAMETERS);
+				Entry parameters = new MemoryEntry(artifact.getId(), parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.PARAMETERS, JDBCService.PARAMETERS);
 				// need to explicitly set id (it was loaded from file)
 				((DefinedStructure) artifact.getParameters()).setId(parameters.getId());
 				node.setEntry(parameters);
@@ -278,7 +279,7 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 				node.setArtifactClass(DefinedStructure.class);
 				node.setArtifact((DefinedStructure) artifact.getResults());
 				node.setLeaf(true);
-				Entry results = new MemoryEntry(parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.RESULTS, JDBCService.RESULTS);
+				Entry results = new MemoryEntry(artifact.getId(), parent.getRepository(), parent, node, parent.getId() + "." + JDBCService.RESULTS, JDBCService.RESULTS);
 				((DefinedStructure) artifact.getResults()).setId(results.getId());
 				node.setEntry(results);
 				parent.addChildren(results);
@@ -378,37 +379,47 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 	
 	public static Map<ComplexType, String> generateNames(Iterable<ComplexType> types) {
 		Map<ComplexType, String> map = new HashMap<ComplexType, String>();
+		// belatedly an additional map was added for exact table names, regardless of the types
+		// for example if two types have the same table name, you want them to use the same binding!
+		Map<String, String> tableMap = new HashMap<String, String>();
 		Map<String, ComplexType> reverseMap = new HashMap<String, ComplexType>();
 		for (ComplexType type : types) {
-			String name = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
-			String shortName = name.replaceAll("(?:^|_)(.)[^_]*", "$1");
-			// if we are already numerically assigning them, find the next available number
-			if (reverseMap.containsKey(shortName + "1")) {
-				String availableName = null;
-				for (int i = 3; i < 100; i++) {
-					if (!reverseMap.containsKey(shortName + i)) {
-						availableName = shortName + i;
-						break;
+			String name = EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(type, true));
+			if (!tableMap.containsKey(name)) {
+				String shortName = name.replaceAll("(?:^|_)(.)[^_]*", "$1");
+				tableMap.put(name, shortName);
+				// if we are already numerically assigning them, find the next available number
+				if (reverseMap.containsKey(shortName + "1")) {
+					String availableName = null;
+					for (int i = 3; i < 100; i++) {
+						if (!reverseMap.containsKey(shortName + i)) {
+							availableName = shortName + i;
+							break;
+						}
 					}
+					if (availableName == null) {
+						throw new IllegalStateException("Too many bindings for name: " + shortName);
+					}
+					map.put(type, availableName);
+					reverseMap.put(availableName, type);
 				}
-				if (availableName == null) {
-					throw new IllegalStateException("Too many bindings for name: " + shortName);
+				// the name is already taken, let's switch to numerical assignment
+				else if (reverseMap.containsKey(shortName)) {
+					// move the original to 1
+					map.put(reverseMap.get(shortName), shortName + "1");
+					reverseMap.put(shortName + "1", reverseMap.get(shortName));
+					// and this one to 2
+					map.put(type, shortName + "2");
+					reverseMap.put(shortName + "2", type);
 				}
-				map.put(type, availableName);
-				reverseMap.put(availableName, type);
-			}
-			// the name is already taken, let's switch to numerical assignment
-			else if (reverseMap.containsKey(shortName)) {
-				// move the original to 1
-				map.put(reverseMap.get(shortName), shortName + "1");
-				reverseMap.put(shortName + "1", reverseMap.get(shortName));
-				// and this one to 2
-				map.put(type, shortName + "2");
-				reverseMap.put(shortName + "2", type);
+				else {
+					map.put(type, shortName);
+					reverseMap.put(shortName, type);
+				}
 			}
 			else {
-				map.put(type, shortName);
-				reverseMap.put(shortName, type);
+				map.put(type, tableMap.get(name));
+				reverseMap.put(tableMap.get(name), type);
 			}
 		}
 		return map;

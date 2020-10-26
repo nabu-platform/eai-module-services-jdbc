@@ -525,7 +525,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					sql.append("\t" + child.getName());
 				}
-				String insertSql = "insert into ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
+				String insertSql = "insert into ~" + EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(service.getParameters(), true)) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
 				if (button.getText().contains("Merge")) {
 					insertSql += "\non conflict(" + idField + ") do update set";
 					insertSql += "\n" + EAIRepositoryUtils.uncamelify(sql.toString()).replaceAll("([\\w]+)", "$1 = excluded.$1");
@@ -572,7 +572,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = case when :" + child.getName() + " is null then " + EAIRepositoryUtils.uncamelify(child.getName()) + " else :" + child.getName() + " end");
 					}
-					String result = "update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
+					String result = "update ~" + EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(service.getParameters(), true)) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
 //					target.textProperty().set(result);
 					editor.setContent("text/sql", result);
 					button.setText("Update");
@@ -603,7 +603,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t" + EAIRepositoryUtils.uncamelify(child.getName()) + " = :" + child.getName());
 					}
-					String result = "update ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getParameters().getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
+					String result = "update ~" + EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(service.getParameters(), true)) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
 //					target.textProperty().set(result);
 					editor.setContent("text/sql", result);
 					button.setText("Merge Update");
@@ -658,12 +658,17 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					}
 					StringBuilder from = new StringBuilder();
 					ComplexType previous = null;
+					String previousCollectionName = null;
 					for (ComplexType type : types) {
 						Boolean value = ValueUtils.getValue(HiddenProperty.getInstance(), type.getProperties());
 						if (value != null && value) {
 							continue;
 						}
-						String typeName = EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(type.getProperties()));
+						String typeName = EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(type, true));
+						// already bound, no additional binding necessary!
+						if (previousCollectionName != null && previousCollectionName.equals(typeName)) {
+							continue;
+						}
 						if (previous != null) {
 							String previousName = names.get(previous);
 							List<String> binding = JDBCUtils.getBinding(type, previous);
@@ -673,6 +678,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 							from.append(" ~").append(typeName + " " + names.get(type));
 						}
 						previous = type;
+						previousCollectionName = typeName;
 					}
 					String string = "select\n" + sql.toString() + "\nfrom" + from.toString();
 //					target.textProperty().set(string);
@@ -690,7 +696,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						}
 						sql.append("\t " + name + "." + EAIRepositoryUtils.uncamelify(child.getName()));
 					}
-					String result = "select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom ~" + EAIRepositoryUtils.uncamelify(JDBCServiceManager.getName(service.getResults().getProperties())) + " " + name;
+					String result = "select\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\nfrom ~" + EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(service.getResults(), true)) + " " + name;
 //					target.textProperty().set(result);
 					editor.setContent("text/sql", result);
 					if (service.getResults().getSuperType() != null) {

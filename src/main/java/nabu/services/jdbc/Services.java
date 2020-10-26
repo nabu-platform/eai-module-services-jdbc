@@ -599,6 +599,7 @@ public class Services {
 		StringBuilder from = new StringBuilder();
 		StringBuilder where = new StringBuilder();
 		ComplexType previous = null;
+		String previousCollectionName = null;
 		Element<?> idField = null;
 		// as we step through the types, we may encounter hidden types with their fields hidden
 		// they belong to the next type in the line
@@ -616,15 +617,19 @@ public class Services {
 				// add all fields to the hidden
 				continue;
 			}
-			String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
-			if (previous != null) {
-				String previousName = names.get(previous);
-				List<String> binding = JDBCUtils.getBinding(type, previous);
-				from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + "." + EAIRepositoryUtils.uncamelify(binding.get(0)) + " = " + previousName + "." + EAIRepositoryUtils.uncamelify(binding.get(1)));
+			String typeName = EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(type, true));
+			// only add an additional binding if we haven't encountered this before
+			if (previousCollectionName == null || !previousCollectionName.equals(typeName)) {
+				if (previous != null) {
+					String previousName = names.get(previous);
+					List<String> binding = JDBCUtils.getBinding(type, previous);
+					from.append(" join ~" + typeName + " " + names.get(type)).append(" on " + names.get(type) + "." + EAIRepositoryUtils.uncamelify(binding.get(0)) + " = " + previousName + "." + EAIRepositoryUtils.uncamelify(binding.get(1)));
+				}
+				else {
+					from.append(" ~").append(typeName + " " + names.get(type));
+				}
 			}
-			else {
-				from.append(" ~").append(typeName + " " + names.get(type));
-			}
+			// we can still add all the fields, the fields are the local ones!
 			if ((id != null && idField == null) || query != null) {
 				for (Element<?> child : fields) {
 					if (id != null && idField == null) {
@@ -644,6 +649,7 @@ public class Services {
 				}
 			}
 			previous = type;
+			previousCollectionName = typeName;
 			// clear the fields before we start on the next type
 			fields.clear();
 		}
@@ -801,11 +807,16 @@ public class Services {
 		// build FROM
 		StringBuilder from = new StringBuilder();
 		ComplexType previous = null;
+		String previousCollectionName = null;
 		List<ComplexType> types = getAllTypes(resolve);
 		Collections.reverse(types);
 		Map<ComplexType, String> names = JDBCServiceManager.generateNames(types);
 		for (ComplexType type : types) {
-			String typeName = EAIRepositoryUtils.uncamelify(getName(type.getProperties()));
+			String typeName = EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(type, true));
+			// no need to rebind
+			if (previousCollectionName != null && previousCollectionName.equals(typeName)) {
+				continue;
+			}
 			if (previous != null) {
 				String previousName = names.get(previous);
 				List<String> binding = JDBCUtils.getBinding(type, previous);
@@ -815,6 +826,7 @@ public class Services {
 				from.append(" ~").append(typeName + " " + names.get(type));
 			}
 			previous = type;
+			previousCollectionName = typeName;
 		}
 		
 		String sql = "select * from " + from.toString();
