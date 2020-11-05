@@ -4,7 +4,7 @@ import javax.xml.bind.annotation.XmlRootElement;
 
 @XmlRootElement
 public class TypeDescription {
-	private String collectionName;
+	private String collectionName, typeName;
 
 	public String getCollectionName() {
 		return collectionName;
@@ -13,4 +13,13 @@ public class TypeDescription {
 	public void setCollectionName(String collectionName) {
 		this.collectionName = collectionName;
 	}
+
+	public String getTypeName() {
+		return typeName;
+	}
+
+	public void setTypeName(String typeName) {
+		this.typeName = typeName;
+	}
+
 }

@@ -64,6 +64,7 @@ import be.nabu.libs.types.api.Type;
 import be.nabu.libs.types.api.TypedKeyValuePair;
 import be.nabu.libs.types.base.ValueImpl;
 import be.nabu.libs.types.properties.CollectionNameProperty;
+import be.nabu.libs.types.properties.ForeignNameProperty;
 import be.nabu.libs.types.properties.GeneratedProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
@@ -568,6 +569,7 @@ public class Services {
 	public TypeDescription describe(@WebParam(name = "typeId") String typeId) {
 		ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
 		TypeDescription description = new TypeDescription();
+		description.setTypeName(resolve.getName());
 		description.setCollectionName(EAIRepositoryUtils.uncamelify(getName(resolve.getProperties())));
 		return description;
 	}
@@ -840,6 +842,17 @@ public class Services {
 				if (filter.getKey() == null) {
 					continue;
 				}
+				
+				// if we have boolean operators, we check if there is a boolean value which can turn on or off this filter
+				// if the input is empty or true, we continue. this means the default value here is actually "true"
+				// for CRUD this is enforced to be false currently by the crud code
+				if (("is null".equals(filter.getOperator()) || "is not null".equals(filter.getOperator())) && filter.getValues() != null && !filter.getValues().isEmpty()) {
+					Object object = filter.getValues().get(0);
+					if (object instanceof Boolean && !(Boolean) object) {
+						continue;
+					}
+				}
+				
 				if (!where.isEmpty()) {
 					if (filter.isOr()) {
 						where += " or";
@@ -854,21 +867,50 @@ public class Services {
 					openOr = true;
 				}
 				ComplexType containingType = null;
+				Element<?> referencedElement = null;
 				// we need to figure out which alias it belongs to so which table
 				for (ComplexType type : types) {
-					if (type.get(filter.getKey()) != null) {
+					referencedElement = type.get(filter.getKey());
+					if (referencedElement != null) {
 						containingType = type;
 						break;
 					}
+					// if we have restricted the field in our current type, we can still filter on it, we just need the correct binding
+					// this is especially necessary for CRUD as we started passing in the extension document (_with_ restrictions) so we can access foreign name fields
+					else {
+						String value = ValueUtils.getValue(RestrictProperty.getInstance(), type.getProperties());
+						if (value != null && type.getSuperType() != null) {
+							if (Arrays.asList(value.split("[\\s]*,[\\s]*")).contains(filter.getKey())) {
+								referencedElement = ((ComplexType) type.getSuperType()).get(filter.getKey());
+								if (referencedElement != null) {
+									containingType = type;
+									break;
+								}
+							}
+						}
+					}
 				}
-				if (containingType == null) {
+				if (containingType == null || referencedElement == null) {
 					throw new IllegalStateException("Could not find the complex type that contains the field: " + filter.getKey());
 				}
-				if (filter.isCaseInsensitive()) {
-					where += " lower(" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
+				// we use the correct binding here and assume the JDBCService.expandSql will inject the correct bindings!
+				Value<String> property = referencedElement.getProperty(ForeignNameProperty.getInstance());
+				if (property != null && property.getValue() != null) {
+					String[] split = property.getValue().split(":");
+					if (filter.isCaseInsensitive()) {
+						where += " lower(" + JDBCUtils.getForeignNameTable(property.getValue()) + "." + JDBCServiceInstance.uncamelify(split[1]) + ")";
+					}
+					else {
+						where += " " + JDBCUtils.getForeignNameTable(property.getValue()) + "." + JDBCServiceInstance.uncamelify(split[1]);
+					}
 				}
 				else {
-					where += " " + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey());
+					if (filter.isCaseInsensitive()) {
+						where += " lower(" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
+					}
+					else {
+						where += " " + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey());
+					}
 				}
 				where += " " + filter.getOperator();
 				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
