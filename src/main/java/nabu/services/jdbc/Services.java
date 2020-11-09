@@ -782,6 +782,19 @@ public class Services {
 		);
 	}
 	
+	// if we have boolean operators, we check if there is a boolean value which can turn on or off this filter
+	// if the input is empty or true, we continue. this means the default value here is actually "true"
+	// for CRUD this is enforced to be false currently by the crud code
+	private boolean skipFilter(Filter filter) {
+		if (("is null".equals(filter.getOperator()) || "is not null".equals(filter.getOperator())) && filter.getValues() != null && !filter.getValues().isEmpty()) {
+			Object object = filter.getValues().get(0);
+			if (object instanceof Boolean && !(Boolean) object) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
 	@SuppressWarnings("unchecked")
 	public JDBCSelectResult selectFiltered(@WebParam(name = "connection") String connection, 
 			@WebParam(name = "transaction") String transaction, 
@@ -843,14 +856,8 @@ public class Services {
 					continue;
 				}
 				
-				// if we have boolean operators, we check if there is a boolean value which can turn on or off this filter
-				// if the input is empty or true, we continue. this means the default value here is actually "true"
-				// for CRUD this is enforced to be false currently by the crud code
-				if (("is null".equals(filter.getOperator()) || "is not null".equals(filter.getOperator())) && filter.getValues() != null && !filter.getValues().isEmpty()) {
-					Object object = filter.getValues().get(0);
-					if (object instanceof Boolean && !(Boolean) object) {
-						continue;
-					}
+				if (skipFilter(filter)) {
+					continue;
 				}
 				
 				if (!where.isEmpty()) {
@@ -896,12 +903,13 @@ public class Services {
 				// we use the correct binding here and assume the JDBCService.expandSql will inject the correct bindings!
 				Value<String> property = referencedElement.getProperty(ForeignNameProperty.getInstance());
 				if (property != null && property.getValue() != null) {
-					String[] split = property.getValue().split(":");
+					List<String> foreignNameTables = JDBCUtils.getForeignNameTables(property.getValue());
+					List<String> foreignNameFields = JDBCUtils.getForeignNameFields(property.getValue());
 					if (filter.isCaseInsensitive()) {
-						where += " lower(" + JDBCUtils.getForeignNameTable(property.getValue()) + "." + JDBCServiceInstance.uncamelify(split[1]) + ")";
+						where += " lower(" + foreignNameTables.get(foreignNameTables.size() - 1) + "." + JDBCServiceInstance.uncamelify(foreignNameFields.get(foreignNameFields.size() - 1)) + ")";
 					}
 					else {
-						where += " " + JDBCUtils.getForeignNameTable(property.getValue()) + "." + JDBCServiceInstance.uncamelify(split[1]);
+						where += " " + foreignNameTables.get(foreignNameTables.size() - 1) + "." + JDBCServiceInstance.uncamelify(foreignNameFields.get(foreignNameFields.size() - 1));
 					}
 				}
 				else {
@@ -941,7 +949,10 @@ public class Services {
 				where += ")";
 				openOr = false;
 			}
-			sql += " where" + where;
+			// could be we skipped all filters!
+			if (!where.isEmpty()) {
+				sql += " where" + where;
+			}
 		}
 		// triggers generation of input, now we update it
 		jdbc.setSql(sql);
@@ -949,8 +960,12 @@ public class Services {
 		if (filters != null && !filters.isEmpty()) {
 			int counter = 0;
 			for (Filter filter : filters) {
-				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
+				if (filter.getValues() != null && !filter.getValues().isEmpty() && !skipFilter(filter)) {
 					Element<?> source = resolve.get(filter.getKey());
+					// can be a restricted extension
+					if (source == null && resolve.getSuperType() instanceof ComplexType) {
+						source = ((ComplexType) resolve.getSuperType()).get(filter.getKey());
+					}
 					Element<?> target = jdbc.getParameters().get("input" + counter++);
 					// inherit the type and properties
 					if (source != null && target != null) {
@@ -974,7 +989,7 @@ public class Services {
 		if (filters != null) {
 			int counter = 0;
 			for (Filter filter : filters) {
-				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
+				if (filter.getValues() != null && !filter.getValues().isEmpty() && !skipFilter(filter)) {
 					newInstance.set("input" + counter++, filter.getValues().size() == 1 ? filter.getValues().get(0) : filter.getValues());
 				}
 			}
