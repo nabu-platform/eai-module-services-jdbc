@@ -782,11 +782,25 @@ public class Services {
 		);
 	}
 	
-	// if we have boolean operators, we check if there is a boolean value which can turn on or off this filter
-	// if the input is empty or true, we continue. this means the default value here is actually "true"
+	public static List<String> inputOperators = Arrays.asList("=", "<>", ">", "<", ">=", "<=", "like", "ilike");
+	
+	// if we have boolean operators, we check if there is a value
+	// if it is true, we apply the filter, if it is false, we apply the inverse filter, if it is null, we skip the filter
+	// if there is no value, the filter is applied
 	// for CRUD this is enforced to be false currently by the crud code
 	private boolean skipFilter(Filter filter) {
-		if (("is null".equals(filter.getOperator()) || "is not null".equals(filter.getOperator())) && filter.getValues() != null && !filter.getValues().isEmpty()) {
+		// if it is not a traditional comparison operator, we assume it is a boolean one
+		if (!inputOperators.contains(filter.getOperator()) && filter.getValues() != null && !filter.getValues().isEmpty()) {
+			Object object = filter.getValues().get(0);
+			if (object == null) {
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	private boolean inverseFilter(Filter filter) {
+		if (!inputOperators.contains(filter.getOperator()) && filter.getValues() != null && !filter.getValues().isEmpty()) {
 			Object object = filter.getValues().get(0);
 			if (object instanceof Boolean && !(Boolean) object) {
 				return true;
@@ -873,6 +887,20 @@ public class Services {
 					where += " (";
 					openOr = true;
 				}
+				
+				boolean inverse = inverseFilter(filter);
+				String operator = filter.getOperator();
+				if (inverse && operator.toLowerCase().equals("is null")) {
+					operator = "is not null";
+					inverse = false;
+				}
+				else if (inverse && operator.toLowerCase().equals("is not null")) {
+					operator = "is null";
+					inverse = false;
+				}
+				else if (inverse) {
+					where += " not(";
+				}
 				ComplexType containingType = null;
 				Element<?> referencedElement = null;
 				// we need to figure out which alias it belongs to so which table
@@ -920,8 +948,8 @@ public class Services {
 						where += " " + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey());
 					}
 				}
-				where += " " + filter.getOperator();
-				if (filter.getValues() != null && !filter.getValues().isEmpty()) {
+				where += " " + operator;
+				if (filter.getValues() != null && !filter.getValues().isEmpty() && inputOperators.contains(operator)) {
 					if (filter.getValues().size() == 1) {
 						if (filter.isCaseInsensitive()) {
 							where += " lower(:input" + counter++ + ")";
@@ -931,13 +959,17 @@ public class Services {
 						}
 					}
 					else {
-						if ("<>".equals(filter.getOperator().trim())) {
+						if ("<>".equals(operator.trim())) {
 							where += " all(:input" + counter++ + ")";
 						}
 						else {
 							where += " any(:input" + counter++ + ")";
 						}
 					}
+				}
+				// close the not statement
+				if (inverse) {
+					where += ")";
 				}
 				// check if we want to close an or
 				if (i < filters.size() - 1 && openOr && !filters.get(i + 1).isOr()) {
@@ -960,7 +992,7 @@ public class Services {
 		if (filters != null && !filters.isEmpty()) {
 			int counter = 0;
 			for (Filter filter : filters) {
-				if (filter.getValues() != null && !filter.getValues().isEmpty() && !skipFilter(filter)) {
+				if (filter.getValues() != null && !filter.getValues().isEmpty() && !skipFilter(filter) && inputOperators.contains(filter.getOperator())) {
 					Element<?> source = resolve.get(filter.getKey());
 					// can be a restricted extension
 					if (source == null && resolve.getSuperType() instanceof ComplexType) {
@@ -989,7 +1021,7 @@ public class Services {
 		if (filters != null) {
 			int counter = 0;
 			for (Filter filter : filters) {
-				if (filter.getValues() != null && !filter.getValues().isEmpty() && !skipFilter(filter)) {
+				if (filter.getValues() != null && !filter.getValues().isEmpty() && !skipFilter(filter) && inputOperators.contains(filter.getOperator())) {
 					newInstance.set("input" + counter++, filter.getValues().size() == 1 ? filter.getValues().get(0) : filter.getValues());
 				}
 			}
