@@ -90,6 +90,12 @@ public class Services {
 	
 	ExecutionContext executionContext;
 	
+	public static Services newInstance(ExecutionContext executionContext) {
+		Services services = new Services();
+		services.executionContext = executionContext;
+		return services;
+	}
+	
 	@XmlType(propOrder = { "entries", "sql" })
 	@XmlRootElement
 	public static class Explanation {
@@ -428,7 +434,7 @@ public class Services {
 		return grouped;
 	}
 
-	private List<ComplexType> getAllTypes(ComplexType type) {
+	private static List<ComplexType> getAllTypes(ComplexType type) {
 		// we first build a list of all the types we need to add
 		List<ComplexType> typesToAdd = new ArrayList<ComplexType>();
 		// we assume our "outer" type always has its own table, if it extends other types, we need to dig deeper if parts of the values have to be stored in different tables
@@ -479,7 +485,7 @@ public class Services {
 		return typesToAdd;
 	}
 
-	private ComplexType restrict(ComplexType superType, List<String> restrictions) {
+	private static ComplexType restrict(ComplexType superType, List<String> restrictions) {
 		Structure structure = new Structure();
 		structure.setProperty(superType.getProperties());
 		structure.setSuperType(superType);
@@ -488,7 +494,7 @@ public class Services {
 		structure.setProperty(new ValueImpl<Boolean>(HiddenProperty.getInstance(), true));
 		return structure;
 	}
-	private String join(List<String> restrictions) {
+	private static String join(List<String> restrictions) {
 		StringBuilder builder = new StringBuilder();
 		for (String restriction : restrictions) {
 			if (!builder.toString().isEmpty()) {
@@ -788,7 +794,7 @@ public class Services {
 	// if it is true, we apply the filter, if it is false, we apply the inverse filter, if it is null, we skip the filter
 	// if there is no value, the filter is applied
 	// for CRUD this is enforced to be false currently by the crud code
-	private boolean skipFilter(Filter filter) {
+	private static boolean skipFilter(Filter filter) {
 		// if it is not a traditional comparison operator, we assume it is a boolean one
 		if (!inputOperators.contains(filter.getOperator()) && filter.getValues() != null && !filter.getValues().isEmpty()) {
 			Object object = filter.getValues().get(0);
@@ -799,7 +805,7 @@ public class Services {
 		return false;
 	}
 	
-	private boolean inverseFilter(Filter filter) {
+	private static boolean inverseFilter(Filter filter) {
 		if (!inputOperators.contains(filter.getOperator()) && filter.getValues() != null && !filter.getValues().isEmpty()) {
 			Object object = filter.getValues().get(0);
 			if (object instanceof Boolean && !(Boolean) object) {
@@ -809,7 +815,6 @@ public class Services {
 		return false;
 	}
 	
-	@SuppressWarnings("unchecked")
 	public JDBCSelectResult selectFiltered(@WebParam(name = "connection") String connection, 
 			@WebParam(name = "transaction") String transaction, 
 			@NotNull @WebParam(name = "typeId") String typeId, 
@@ -820,6 +825,25 @@ public class Services {
 			@WebParam(name = "hasNext") Boolean hasNext,
 			@WebParam(name = "filters") List<Filter> filters,
 			@WebParam(name = "language") String language) throws ServiceException {
+		
+		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, hasNext, filters, language, executionContext, null, null);
+	}
+	
+	@SuppressWarnings("unchecked")
+	public static JDBCSelectResult selectFiltered(
+			String connection, 
+			String transaction, 
+			String typeId, 
+			Long offset, 
+			Integer limit, 
+			List<String> orderBy, 
+			Boolean totalRowCount, 
+			Boolean hasNext,
+			List<Filter> filters,
+			String language,
+			ExecutionContext executionContext,
+			List<String> groupBy,
+			String selection) throws ServiceException {
 		
 		String serviceId = typeId + ":generated.selectFiltered";
 		JDBCService jdbc = new JDBCService(serviceId);
@@ -858,7 +882,7 @@ public class Services {
 			previousCollectionName = typeName;
 		}
 		
-		String sql = "select * from " + from.toString();
+		String sql = "select " + (selection == null ? "*" : selection) + " from " + from.toString();
 		
 		if (filters != null && !filters.isEmpty()) {
 			String where = "";
@@ -986,6 +1010,31 @@ public class Services {
 				sql += " where" + where;
 			}
 		}
+		
+		if (groupBy != null && !groupBy.isEmpty()) {
+			String grouped = "";
+			for (String single : groupBy) {
+				int counter = 1;
+				for (Element<?> element : TypeUtils.getAllChildren(resolve)) {
+					if (element.getName().equals(single)) {
+						if (!grouped.isEmpty()) {
+							grouped += ", ";
+						}
+						// h2 supports numeric order by, but _not_ numeric group by...bastids
+//						grouped += counter;
+						grouped += NamingConvention.UNDERSCORE.apply(element.getName());
+						break;
+					}
+					else {
+						counter++;
+					}
+				}
+			}
+			if (!grouped.isEmpty()) {
+				sql += " group by " + grouped;
+			}
+		}
+		
 		// triggers generation of input, now we update it
 		jdbc.setSql(sql);
 		
