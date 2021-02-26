@@ -40,6 +40,7 @@ import be.nabu.libs.services.api.ExecutionContext;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.api.ServiceDescription;
 import be.nabu.libs.services.api.ServiceException;
+import be.nabu.libs.services.jdbc.AffixInput;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.JDBCServiceInstance;
 import be.nabu.libs.services.jdbc.JDBCUtils;
@@ -74,6 +75,7 @@ import be.nabu.libs.types.properties.PrimaryKeyProperty;
 import be.nabu.libs.types.properties.RestrictProperty;
 import be.nabu.libs.types.properties.TimezoneProperty;
 import be.nabu.libs.types.structure.Structure;
+import nabu.services.jdbc.types.JoinStatement;
 import nabu.services.jdbc.types.Page;
 import nabu.services.jdbc.types.Paging;
 import nabu.services.jdbc.types.StoredProcedure;
@@ -824,9 +826,10 @@ public class Services {
 			@WebParam(name = "totalRowCount") Boolean totalRowCount, 
 			@WebParam(name = "hasNext") Boolean hasNext,
 			@WebParam(name = "filters") List<Filter> filters,
-			@WebParam(name = "language") String language) throws ServiceException {
+			@WebParam(name = "language") String language,
+			@WebParam(name = "joins") List<JoinStatement> joins) throws ServiceException {
 		
-		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, hasNext, filters, language, executionContext, null, null);
+		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, hasNext, filters, language, executionContext, null, null, joins);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -843,7 +846,8 @@ public class Services {
 			String language,
 			ExecutionContext executionContext,
 			List<String> groupBy,
-			String selection) throws ServiceException {
+			String selection,
+			List<JoinStatement> joins) throws ServiceException {
 		
 		String serviceId = typeId + ":generated.selectFiltered";
 		JDBCService jdbc = new JDBCService(serviceId);
@@ -864,6 +868,20 @@ public class Services {
 		List<ComplexType> types = getAllTypes(resolve);
 		Collections.reverse(types);
 		Map<ComplexType, String> names = JDBCServiceManager.generateNames(types);
+		
+		boolean useDistinct = false;
+		Map<String, List<JoinStatement>> joinsToUse = new HashMap<String, List<JoinStatement>>();
+		if (joins != null) {
+			for (JoinStatement statement : joins) {
+				if (!joinsToUse.containsKey(statement.getSourceJoin())) {
+					joinsToUse.put(statement.getSourceJoin(), new ArrayList<JoinStatement>());
+				}
+				joinsToUse.get(statement.getSourceJoin()).add(statement);
+			}
+		}
+		
+		int joinCounter = 1;
+		
 		for (ComplexType type : types) {
 			String typeName = EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(type, true));
 			// no need to rebind
@@ -878,11 +896,30 @@ public class Services {
 			else {
 				from.append(" ~").append(typeName + " " + names.get(type));
 			}
+			if (joinsToUse.containsKey(typeName)) {
+				for (JoinStatement statement : joinsToUse.remove(typeName)) {
+					if (statement.getMultipleMatches() != null && statement.getMultipleMatches()) {
+						useDistinct = true;
+					}
+
+					String joinName = "auto_join_" + joinCounter++;
+					String on = statement.getOn();
+					if (on == null) {
+						on = "source.id = target.id";
+					}
+					from.append(" " + (statement.getType() == null ? "join" : statement.getType()) + " " + statement.getTargetJoin() + " " + joinName + " on " + on.replace("source.", names.get(type) + ".").replace("target.", joinName + "."));
+				}
+			}
 			previous = type;
 			previousCollectionName = typeName;
 		}
 		
-		String sql = "select " + (selection == null ? "*" : selection) + " from " + from.toString();
+		// if we have a distinct requirement, but it's already present, don't add it
+		if (useDistinct && selection != null && selection.matches("(?i)(?s).*\\bdistinct\\b.*")) {
+			useDistinct = false;
+		}
+		
+		String sql = "select " + (useDistinct ? "distinct " : "") + (selection == null ? "*" : selection) + " from " + from.toString();
 		
 		if (filters != null && !filters.isEmpty()) {
 			String where = "";
@@ -1326,17 +1363,17 @@ public class Services {
 	}
 	
 	@ServiceDescription(description = "Insert any number of correctly annotated objects into the given connection. They will be grouped by type and batch inserted.")
-	public void insert(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
-		insertOrUpdate(connection, transaction, instances, changeTracker, false);
+	public void insert(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker, @WebParam(name = "affixes") List<AffixInput> affixes) throws ServiceException {
+		insertOrUpdate(connection, transaction, instances, changeTracker, false, affixes);
 	}
 	
 	@ServiceDescription(description = "Merge any number of correctly annotated objects into the given connection. They will be grouped by type and batch merged.")
-	public void merge(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
-		insertOrUpdate(connection, transaction, instances, changeTracker, true);
+	public void merge(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker, @WebParam(name = "affixes") List<AffixInput> affixes) throws ServiceException {
+		insertOrUpdate(connection, transaction, instances, changeTracker, true, affixes);
 	}
 
 	@SuppressWarnings("unchecked")
-	private void insertOrUpdate(String connection, String transaction, List<Object> instances, String changeTracker, boolean merge) throws ServiceException {
+	private void insertOrUpdate(String connection, String transaction, List<Object> instances, String changeTracker, boolean merge, List<AffixInput> affixes) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
 			List<ComplexContent> contents = group.get(type);
@@ -1374,6 +1411,7 @@ public class Services {
 			input.set(JDBCService.CONNECTION, typeConnection);
 			input.set(JDBCService.TRANSACTION, transaction);
 			input.set(JDBCService.PARAMETERS, contents);
+			input.set(JDBCService.AFFIX, affixes);
 			ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 			ComplexContent output = runtime.run(input);
 			if (jdbc.getGeneratedColumn() != null) {
