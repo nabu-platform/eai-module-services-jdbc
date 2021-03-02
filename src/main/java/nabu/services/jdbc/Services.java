@@ -61,7 +61,6 @@ import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.api.KeyValuePair;
 import be.nabu.libs.types.api.ModifiableElement;
 import be.nabu.libs.types.api.SimpleType;
-import be.nabu.libs.types.api.Type;
 import be.nabu.libs.types.api.TypedKeyValuePair;
 import be.nabu.libs.types.base.ValueImpl;
 import be.nabu.libs.types.properties.CollectionNameProperty;
@@ -74,7 +73,6 @@ import be.nabu.libs.types.properties.NameProperty;
 import be.nabu.libs.types.properties.PrimaryKeyProperty;
 import be.nabu.libs.types.properties.RestrictProperty;
 import be.nabu.libs.types.properties.TimezoneProperty;
-import be.nabu.libs.types.structure.Structure;
 import nabu.services.jdbc.types.JoinStatement;
 import nabu.services.jdbc.types.Page;
 import nabu.services.jdbc.types.Paging;
@@ -423,7 +421,7 @@ public class Services {
 				// each type with its own collection name is considered to be a separate table
 				ComplexType type = ((ComplexContent) instance).getType();
 
-				List<ComplexType> typesToAdd = getAllTypes(type);
+				List<ComplexType> typesToAdd = JDBCUtils.getAllTypes(type);
 
 				// the types are from child to parent, we need the other way around assuming the tables are linked with foreign keys, then the insertion order is important
 				Collections.reverse(typesToAdd);
@@ -434,77 +432,6 @@ public class Services {
 			}
 		}
 		return grouped;
-	}
-
-	private static List<ComplexType> getAllTypes(ComplexType type) {
-		// we first build a list of all the types we need to add
-		List<ComplexType> typesToAdd = new ArrayList<ComplexType>();
-		// we assume our "outer" type always has its own table, if it extends other types, we need to dig deeper if parts of the values have to be stored in different tables
-		// but at the very least the local extension fields will have to be in its own table
-		typesToAdd.add(type);
-		
-		List<String> collectionNames = new ArrayList<String>();
-		// we want to add the root collection
-		String rootCollection = ValueUtils.getValue(CollectionNameProperty.getInstance(), type.getProperties());
-		if (rootCollection == null) {
-			rootCollection = NamingConvention.UNDERSCORE.apply(type.getName());
-		}
-		collectionNames.add(rootCollection);
-		
-		// we must keep a runny tally of restrictions because in an extension you can restrict something from another table
-		// if you are restricting the same table, this works because we take the most specific definition
-		// if we just keep the original type for a different table however, we lose this restriction information
-		// this is why we create ad hoc extensions to do this
-		List<String> restrictions = new ArrayList<String>();
-		// we check supertypes that have specifically named tables that have not yet been included
-		// child can use restrictions to restrict parent types, so the child is "correcter" in a given context
-		while (type.getSuperType() != null) {
-			// make sure we take into account restrictions we imposed on the supertype
-			String value = ValueUtils.getValue(RestrictProperty.getInstance(), type.getProperties());
-			if (value != null && !value.trim().isEmpty()) {
-				restrictions.addAll(Arrays.asList(value.split("[\\s]*,[\\s]*")));
-			}
-			Type superType = type.getSuperType();
-			if (superType instanceof ComplexType) {
-				String collectionName = ValueUtils.getValue(CollectionNameProperty.getInstance(), superType.getProperties());
-				// we have part of the end result that resides in a dedicated table
-				if (collectionName != null && collectionNames.indexOf(collectionName) < 0) {
-					if (restrictions.isEmpty()) {
-						typesToAdd.add((ComplexType) superType);
-					}
-					else {
-						typesToAdd.add(restrict((ComplexType) superType, restrictions));
-					}
-					collectionNames.add(collectionName);
-				}
-				type = (ComplexType) superType;
-			}
-			// if we ever extend a simple type, we stop here
-			else {
-				break;
-			}
-		}
-		return typesToAdd;
-	}
-
-	private static ComplexType restrict(ComplexType superType, List<String> restrictions) {
-		Structure structure = new Structure();
-		structure.setProperty(superType.getProperties());
-		structure.setSuperType(superType);
-		structure.setProperty(new ValueImpl<String>(RestrictProperty.getInstance(), join(restrictions)));
-		// we add this so we can unwrap() it later
-		structure.setProperty(new ValueImpl<Boolean>(HiddenProperty.getInstance(), true));
-		return structure;
-	}
-	private static String join(List<String> restrictions) {
-		StringBuilder builder = new StringBuilder();
-		for (String restriction : restrictions) {
-			if (!builder.toString().isEmpty()) {
-				builder.append(",");
-			}
-			builder.append(restriction);
-		}
-		return builder.toString();
 	}
 
 	private void addInstance(Map<ComplexType, List<ComplexContent>> grouped, Object instance, ComplexType type) {
@@ -865,7 +792,7 @@ public class Services {
 		StringBuilder from = new StringBuilder();
 		ComplexType previous = null;
 		String previousCollectionName = null;
-		List<ComplexType> types = getAllTypes(resolve);
+		List<ComplexType> types = JDBCUtils.getAllTypes(resolve);
 		Collections.reverse(types);
 		Map<ComplexType, String> names = JDBCServiceManager.generateNames(types);
 		
@@ -1466,7 +1393,7 @@ public class Services {
 	public void deleteById(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @NotNull @WebParam(name = "typeId") String typeId, @WebParam(name = "ids") List<Object> ids, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		if (typeId != null && ids != null && !ids.isEmpty()) {
 			ComplexType type = (ComplexType) EAIResourceRepository.getInstance().resolve(typeId);
-			for (ComplexType typeToDelete : getAllTypes(type)) {
+			for (ComplexType typeToDelete : JDBCUtils.getAllTypes(type)) {
 				Element<?> primaryKey = null;
 				for (Element<?> child : JDBCUtils.getFieldsInTable(typeToDelete)) {
 					Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
