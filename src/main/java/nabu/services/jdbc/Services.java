@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -809,6 +810,7 @@ public class Services {
 		
 		int joinCounter = 1;
 		
+		Map<String, String> customJoins = new HashMap<String, String>();
 		for (ComplexType type : types) {
 			String typeName = EAIRepositoryUtils.uncamelify(JDBCUtils.getTypeName(type, true));
 			// no need to rebind
@@ -835,10 +837,44 @@ public class Services {
 						on = "source.id = target.id";
 					}
 					from.append(" " + (statement.getType() == null ? "join" : statement.getType()) + " " + statement.getTargetJoin() + " " + joinName + " on " + on.replace("source.", names.get(type) + ".").replace("target.", joinName + "."));
+					customJoins.put(statement.getTargetJoin(), joinName);
 				}
 			}
 			previous = type;
 			previousCollectionName = typeName;
+		}
+		
+		int amountOfJoins = joinsToUse.size();
+		// as long as we have left, iterate
+		// if we get here, you are not joining to something in the types hierarchy, but likely to other joins
+		while (amountOfJoins > 0) {
+			Iterator<String> iterator = joinsToUse.keySet().iterator();
+			while (iterator.hasNext()) {
+				String joinOn = iterator.next();
+				if (customJoins.containsKey(joinOn)) {
+					for (JoinStatement statement : joinsToUse.get(joinOn)) {
+						if (statement.getMultipleMatches() != null && statement.getMultipleMatches()) {
+							useDistinct = true;
+						}
+						String joinName = "auto_join_" + joinCounter++;
+						String on = statement.getOn();
+						if (on == null) {
+							on = "source.id = target.id";
+						}
+						from.append(" " + (statement.getType() == null ? "join" : statement.getType()) + " " + statement.getTargetJoin() + " " + joinName + " on " + on.replace("source.", customJoins.get(joinOn) + ".").replace("target.", joinName + "."));
+						customJoins.put(statement.getTargetJoin(), joinName);
+					}
+					iterator.remove();
+				}
+			}
+			// we could not resolve any
+			if (joinsToUse.size() == amountOfJoins) {
+				throw new IllegalArgumentException("Could not resolve all added joins");
+			}
+			// continue whittling down
+			else {
+				amountOfJoins = joinsToUse.size();
+			}
 		}
 		
 		// if we have a distinct requirement, but it's already present, don't add it
