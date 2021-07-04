@@ -41,6 +41,7 @@ import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.jdbc.JDBCService;
 import be.nabu.libs.services.jdbc.JDBCUtils;
 import be.nabu.libs.services.jdbc.api.ChangeTracker;
+import be.nabu.libs.services.jdbc.api.SQLDialect;
 import be.nabu.libs.services.pojo.POJOUtils;
 import be.nabu.libs.services.pojo.POJOUtils.ServiceInvocationHandler;
 import be.nabu.libs.types.TypeUtils;
@@ -411,6 +412,13 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 					// and this one to 2
 					map.put(type, shortName + "2");
 					reverseMap.put(shortName + "2", type);
+				}
+				// if it is reserved, we immediately start with 1
+				// because of the odd logic in the above, this means we go from 1 to 3 and skip 2
+				// while not perfect, it doesn't really matter?
+				else if (SQLDialect.sqlReservedWords.contains(shortName)) {
+					map.put(type, shortName + "1");
+					reverseMap.put(shortName + "1", type);
 				}
 				else {
 					map.put(type, shortName);
