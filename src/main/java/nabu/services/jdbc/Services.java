@@ -755,9 +755,10 @@ public class Services {
 			@WebParam(name = "hasNext") Boolean hasNext,
 			@WebParam(name = "filters") List<Filter> filters,
 			@WebParam(name = "language") String language,
+			@WebParam(name = "lazy") Boolean lazy,
 			@WebParam(name = "joins") List<JoinStatement> joins) throws ServiceException {
 		
-		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, hasNext, filters, language, executionContext, null, null, joins);
+		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, hasNext, filters, language, executionContext, null, null, lazy, joins);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -775,6 +776,7 @@ public class Services {
 			ExecutionContext executionContext,
 			List<String> groupBy,
 			String selection,
+			Boolean lazy,
 			List<JoinStatement> joins) throws ServiceException {
 		
 		String serviceId = typeId + ":generated.selectFiltered";
@@ -1085,6 +1087,9 @@ public class Services {
 		input.set(JDBCService.ORDER_BY, orderBy);
 		input.set(JDBCService.TOTAL_ROW_COUNT, totalRowCount);
 		input.set(JDBCService.HAS_NEXT, hasNext);
+		if (lazy != null) {
+			input.set(JDBCService.LAZY, lazy);
+		}
 		
 		if (language != null && jdbc.getServiceInterface().getInputDefinition().get("language") != null) {
 			input.set("language", language);
