@@ -451,9 +451,12 @@ public class Services {
 				idField = child.getName();
 			}
 			
-			// if it is generated, we don't insert it by default (but we do merge!)
+			// if it is generated, we don't insert it by default
+			// @2021-10-27: we don't want the generated properties in the merge either
+			// either it is the primary key and it is the merge conflict itself
+			// or it should really be in sync with the primary and not be updated in a merge
 			Value<Boolean> generatedProperty = child.getProperty(GeneratedProperty.getInstance());
-			if (!merge && generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) {
+			if (generatedProperty != null && generatedProperty.getValue() != null && generatedProperty.getValue()) { // !merge && 
 				continue;
 			}
 			
@@ -755,6 +758,7 @@ public class Services {
 			@WebParam(name = "hasNext") Boolean hasNext,
 			@WebParam(name = "filters") List<Filter> filters,
 			@WebParam(name = "language") String language,
+			// doesn't work atm, simply because we can't feed back the resultset (it's not a list..)
 			@WebParam(name = "lazy") Boolean lazy,
 			@WebParam(name = "joins") List<JoinStatement> joins) throws ServiceException {
 		
@@ -1471,7 +1475,7 @@ public class Services {
 				input.set(JDBCService.CONNECTION, connection);
 				input.set(JDBCService.TRANSACTION, transaction);
 				for (int i = 0; i < ids.size(); i++) {
-					input.set(JDBCService.PARAMETERS + "[" + i + "]/" + keyName, ids);
+					input.set(JDBCService.PARAMETERS + "[" + i + "]/" + keyName, ids.get(i));
 				}
 				ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 				runtime.run(input);
