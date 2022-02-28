@@ -785,9 +785,13 @@ public class Services {
 		
 		String serviceId = typeId + ":generated.selectFiltered";
 		JDBCService jdbc = new JDBCService(serviceId);
-		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+		RepositoryDataSourceResolver dataSourceResolver = new RepositoryDataSourceResolver();
+		jdbc.setDataSourceResolver(dataSourceResolver);
 		jdbc.setInputGenerated(true);
 		jdbc.setOutputGenerated(false);
+		
+		String dataSourceId = dataSourceResolver.getDataSourceId(serviceId);
+		SQLDialect dialect = dataSourceId == null ? null : ((DataSourceWithDialectProviderArtifact) EAIResourceRepository.getInstance().resolve(dataSourceId)).getDialect();
 		
 		ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
 		if (resolve == null) {
@@ -1017,6 +1021,8 @@ public class Services {
 			}
 		}
 		
+		boolean useNumericGroupBy = dialect != null && dialect.supportNumericGroupBy();
+		
 		if (groupBy != null && !groupBy.isEmpty()) {
 			String grouped = "";
 			for (String single : groupBy) {
@@ -1026,9 +1032,15 @@ public class Services {
 						if (!grouped.isEmpty()) {
 							grouped += ", ";
 						}
-						// h2 supports numeric order by, but _not_ numeric group by...bastids
-//						grouped += counter;
-						grouped += NamingConvention.UNDERSCORE.apply(element.getName());
+						// h2 supports numeric order by, but _not_ numeric group by...
+						if (useNumericGroupBy) {
+							grouped += counter;
+						}
+						// because there are names of fields without their proper table syntax, they can lead to "ambiguous" results
+						// TODO: we should add the correct table
+						else {
+							grouped += NamingConvention.UNDERSCORE.apply(element.getName());
+						}
 						break;
 					}
 					else {
