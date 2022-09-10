@@ -755,6 +755,7 @@ public class Services {
 			@WebParam(name = "limit") Integer limit, 
 			@WebParam(name = "orderBy") List<String> orderBy, 
 			@WebParam(name = "totalRowCount") Boolean totalRowCount, 
+			@WebParam(name = "estimateRowCount") Boolean estimateRowCount,
 			@WebParam(name = "hasNext") Boolean hasNext,
 			@WebParam(name = "filters") List<Filter> filters,
 			@WebParam(name = "language") String language,
@@ -762,7 +763,7 @@ public class Services {
 			@WebParam(name = "lazy") Boolean lazy,
 			@WebParam(name = "joins") List<JoinStatement> joins) throws ServiceException {
 		
-		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, hasNext, filters, language, executionContext, null, null, lazy, joins);
+		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, estimateRowCount, hasNext, filters, language, executionContext, null, null, lazy, joins);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -774,6 +775,7 @@ public class Services {
 			Integer limit, 
 			List<String> orderBy, 
 			Boolean totalRowCount, 
+			Boolean estimateRowCount,
 			Boolean hasNext,
 			List<Filter> filters,
 			String language,
@@ -1101,7 +1103,8 @@ public class Services {
 		input.set(JDBCService.LIMIT, limit);
 		input.set(JDBCService.OFFSET, offset);
 		input.set(JDBCService.ORDER_BY, orderBy);
-		input.set(JDBCService.TOTAL_ROW_COUNT, totalRowCount);
+		input.set(JDBCService.INCLUDE_TOTAL_COUNT, totalRowCount);
+		input.set(JDBCService.INCLUDE_ESTIMATE_COUNT, estimateRowCount);
 		input.set(JDBCService.HAS_NEXT, hasNext);
 		if (lazy != null) {
 			input.set(JDBCService.LAZY, lazy);
@@ -1346,7 +1349,7 @@ public class Services {
 		}
 	}
 	
-	@ServiceDescription(description = "Insert any number of correctly annotated objects into the given connection. They will be grouped by type and batch inserted.")
+	@ServiceDescription(comment = "Insert {instances|objects} into {connection|a database}", description = "Insert any number of correctly annotated objects into the given connection. They will be grouped by type and batch inserted.")
 	public void insert(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker, @WebParam(name = "affixes") List<AffixInput> affixes) throws ServiceException {
 		insertOrUpdate(connection, transaction, instances, changeTracker, false, affixes);
 	}

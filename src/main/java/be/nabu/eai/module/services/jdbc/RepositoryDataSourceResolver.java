@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import be.nabu.eai.repository.EAIResourceRepository;
+import be.nabu.libs.artifacts.api.Artifact;
+import be.nabu.libs.artifacts.api.ArtifactProxy;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
 import be.nabu.libs.services.jdbc.api.DynamicDataSourceResolver;
 
@@ -16,6 +18,12 @@ public class RepositoryDataSourceResolver implements DynamicDataSourceResolver {
 	@Override
 	public String getDataSourceId(String forId) {
 		DataSourceWithDialectProviderArtifact resolveFor = EAIResourceRepository.getInstance().resolveFor(forId, DataSourceWithDialectProviderArtifact.class);
+		if (resolveFor instanceof ArtifactProxy)  {
+			Artifact proxied = ((ArtifactProxy) resolveFor).getProxied();
+			if (proxied instanceof DataSourceWithDialectProviderArtifact) {
+				resolveFor = (DataSourceWithDialectProviderArtifact) proxied;
+			}
+		}
 		return resolveFor == null ? null : resolveFor.getId();
 		
 //		ServiceRuntime runtime = ServiceRuntime.getRuntime();
