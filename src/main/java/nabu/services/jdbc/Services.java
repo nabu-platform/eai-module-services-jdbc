@@ -501,6 +501,9 @@ public class Services {
 		if (idField == null) {
 			throw new IllegalArgumentException("Could not determine primary key field for type: " + (type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous"));
 		}
+		if (sql.toString().isEmpty()) {
+			return null;
+		}
 		return "update ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
 	}
 	
@@ -1321,7 +1324,14 @@ public class Services {
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
 			jdbc.setParameters(unwrap(type));
-			jdbc.setSql(generateUpdate(type));
+			// @2022-11-15 in some cases (e.g. an extension with only id duplicate or an update service with a lot of blacklisting)
+			// we might end up with something that actually does not have any fields to update
+			// in such a scenario, we don't want to throw an error, we just want to skip the update
+			String generateUpdate = generateUpdate(type);
+			if (generateUpdate == null) {
+				continue;
+			}
+			jdbc.setSql(generateUpdate);
 			ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
 			input.set(JDBCService.CONNECTION, connection);
 			input.set(JDBCService.TRANSACTION, transaction);

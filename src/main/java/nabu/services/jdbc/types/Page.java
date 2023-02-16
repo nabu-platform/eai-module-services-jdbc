@@ -3,7 +3,7 @@ package nabu.services.jdbc.types;
 import javax.xml.bind.annotation.XmlType;
 
 @XmlType(propOrder = { "current", "total", "pageSize", "rowOffset", "totalRowCount" })
-public class Page {
+public class Page implements be.nabu.eai.repository.api.Page {
 	
 	private int current, total;
 	private long totalRowCount, pageSize, rowOffset;
