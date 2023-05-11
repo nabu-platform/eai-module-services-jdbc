@@ -1122,7 +1122,7 @@ public class Services {
 		
 		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 		ComplexContent output = runtime.run(input);
-		
+		// TODO: when doing a lazy select, we get back a resultsetwithtype which _has_ a collection handler, it can't be cast to a list however. "could" implement a list around a generic collection to expose it as such?
 		return new JDBCSelectResult(
 			(List<Object>) output.get(JDBCService.RESULTS), 
 			(Long) output.get(JDBCService.ROW_COUNT), 
@@ -1428,34 +1428,36 @@ public class Services {
 	public void delete(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
 		Map<ComplexType, List<ComplexContent>> group = group(instances);
 		for (ComplexType type : group.keySet()) {
-			Element<?> primaryKey = null;
-			for (Element<?> child : JDBCUtils.getFieldsInTable(type)) {
-				Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
-				if (property != null && property.getValue()) {
-					primaryKey = child;
-					break;
+			for (ComplexType typeToDelete : JDBCUtils.getAllTypes(type)) {
+				Element<?> primaryKey = null;
+				for (Element<?> child : JDBCUtils.getFieldsInTable(typeToDelete)) {
+					Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
+					if (property != null && property.getValue()) {
+						primaryKey = child;
+						break;
+					}
 				}
+				if (primaryKey == null) {
+					throw new IllegalArgumentException("Could not find primary key");
+				}
+				
+				List<ComplexContent> contents = group.get(type);
+				String id = typeToDelete instanceof DefinedType ? ((DefinedType) typeToDelete).getId() : "$anonymous";
+				id += ":generated.delete";
+				JDBCService jdbc = new JDBCService(id);
+				jdbc.setChangeTracker(toChangeTracker(changeTracker));
+				jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+				jdbc.setInputGenerated(false);
+				jdbc.setOutputGenerated(false);
+				jdbc.setParameters(unwrap(typeToDelete));
+				jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(typeToDelete.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = :" + primaryKey.getName());
+				ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
+				input.set(JDBCService.CONNECTION, connection);
+				input.set(JDBCService.TRANSACTION, transaction);
+				input.set(JDBCService.PARAMETERS, contents);
+				ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
+				runtime.run(input);
 			}
-			if (primaryKey == null) {
-				throw new IllegalArgumentException("Could not find primary key");
-			}
-			
-			List<ComplexContent> contents = group.get(type);
-			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
-			id += ":generated.delete";
-			JDBCService jdbc = new JDBCService(id);
-			jdbc.setChangeTracker(toChangeTracker(changeTracker));
-			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
-			jdbc.setInputGenerated(false);
-			jdbc.setOutputGenerated(false);
-			jdbc.setParameters(unwrap(type));
-			jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = :" + primaryKey.getName());
-			ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
-			input.set(JDBCService.CONNECTION, connection);
-			input.set(JDBCService.TRANSACTION, transaction);
-			input.set(JDBCService.PARAMETERS, contents);
-			ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
-			runtime.run(input);
 		}		
 	}
 	

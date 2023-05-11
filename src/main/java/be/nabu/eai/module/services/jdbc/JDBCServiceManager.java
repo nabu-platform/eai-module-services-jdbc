@@ -377,7 +377,11 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 		}
 		return value;
 	}
-	
+
+	/**
+	 * If you have the same short name (e.g. node_external_ids => nei) the first time we use the short name as is (unless reserved)
+	 * The second time we get the exact same short name, we update the first one to 1, the second one to 2. That's why the loop only starts at 3...
+	 */
 	public static Map<ComplexType, String> generateNames(Iterable<ComplexType> types) {
 		Map<ComplexType, String> map = new HashMap<ComplexType, String>();
 		// belatedly an additional map was added for exact table names, regardless of the types
