@@ -235,7 +235,11 @@ public class Services {
 	}
 	
 	@WebResult(name = "paging")
-	public Paging paging(@WebParam(name = "limit") Integer limit, @WebParam(name = "maxLimit") @NotNull Integer maxLimit, @WebParam(name = "offset") Integer offset, @WebParam(name = "maxOffset") Integer maxOffset, @WebParam(name = "isPageOffset") Boolean isPageOffset) {
+	public Paging paging(@WebParam(name = "limit") Integer limit, @WebParam(name = "maxLimit") Integer maxLimit, @WebParam(name = "offset") Integer offset, @WebParam(name = "maxOffset") Integer maxOffset, @WebParam(name = "isPageOffset") Boolean isPageOffset) {
+		// change of default value since 2023-05-30
+		if (isPageOffset == null) {
+			isPageOffset = false;
+		}
 		if (limit == null) {
 			limit = maxLimit;
 		}

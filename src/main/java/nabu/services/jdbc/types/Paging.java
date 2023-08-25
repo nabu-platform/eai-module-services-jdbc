@@ -1,7 +1,7 @@
 package nabu.services.jdbc.types;
 
 public class Paging {
-	private Integer limit, offset;
+	private Integer limit, offset, pageNumber;
 
 	public Paging() {
 		// auto construct
@@ -21,5 +21,14 @@ public class Paging {
 	}
 	public void setOffset(Integer offset) {
 		this.offset = offset;
+	}
+	public Integer getPageNumber() {
+		if (pageNumber == null) {
+			return limit != null && offset != null ? offset / limit : null;
+		}
+		return pageNumber;
+	}
+	public void setPageNumber(Integer pageNumber) {
+		this.pageNumber = pageNumber;
 	}
 }
