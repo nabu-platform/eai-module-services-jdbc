@@ -410,8 +410,11 @@ public class Services {
 		return iface;
 	}
 	
-	@SuppressWarnings("unchecked")
 	private Map<ComplexType, List<ComplexContent>> group(List<Object> instances) {
+		return group(instances, true);
+	}
+	@SuppressWarnings("unchecked")
+	private Map<ComplexType, List<ComplexContent>> group(List<Object> instances, boolean reverse) {
 		// especially for insertion, the order _is_ important, hence linked
 		Map<ComplexType, List<ComplexContent>> grouped = new LinkedHashMap<ComplexType, List<ComplexContent>>();
 		for (Object instance : instances) {
@@ -428,8 +431,10 @@ public class Services {
 
 				List<ComplexType> typesToAdd = JDBCUtils.getAllTypes(type);
 
-				// the types are from child to parent, we need the other way around assuming the tables are linked with foreign keys, then the insertion order is important
-				Collections.reverse(typesToAdd);
+				if (reverse) {
+					// the types are from child to parent, we need the other way around assuming the tables are linked with foreign keys, then the insertion order is important
+					Collections.reverse(typesToAdd);
+				}
 	
 				for (ComplexType typeToAdd : typesToAdd) {
 					addInstance(grouped, instance, typeToAdd);
@@ -1430,9 +1435,9 @@ public class Services {
 	
 	@ServiceDescription(description = "Delete any number of correctly annotated objects from the given connection. They will be grouped by type and batch deleted.")
 	public void delete(@WebParam(name = "connection") String connection, @WebParam(name = "transaction") String transaction, @WebParam(name = "instances") List<Object> instances, @WebParam(name = "changeTracker") String changeTracker) throws ServiceException {
-		Map<ComplexType, List<ComplexContent>> group = group(instances);
-		for (ComplexType type : group.keySet()) {
-			for (ComplexType typeToDelete : JDBCUtils.getAllTypes(type)) {
+		Map<ComplexType, List<ComplexContent>> group = group(instances, false);
+		for (ComplexType typeToDelete : group.keySet()) {
+//			for (ComplexType typeToDelete : JDBCUtils.getAllTypes(type)) {
 				Element<?> primaryKey = null;
 				for (Element<?> child : JDBCUtils.getFieldsInTable(typeToDelete)) {
 					Value<Boolean> property = child.getProperty(PrimaryKeyProperty.getInstance());
@@ -1445,7 +1450,7 @@ public class Services {
 					throw new IllegalArgumentException("Could not find primary key");
 				}
 				
-				List<ComplexContent> contents = group.get(type);
+				List<ComplexContent> contents = group.get(typeToDelete);
 				String id = typeToDelete instanceof DefinedType ? ((DefinedType) typeToDelete).getId() : "$anonymous";
 				id += ":generated.delete";
 				JDBCService jdbc = new JDBCService(id);
@@ -1461,7 +1466,7 @@ public class Services {
 				input.set(JDBCService.PARAMETERS, contents);
 				ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 				runtime.run(input);
-			}
+//			}
 		}		
 	}
 	
