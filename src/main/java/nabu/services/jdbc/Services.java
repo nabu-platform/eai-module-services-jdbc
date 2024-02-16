@@ -63,6 +63,7 @@ import be.nabu.libs.types.api.KeyValuePair;
 import be.nabu.libs.types.api.ModifiableElement;
 import be.nabu.libs.types.api.SimpleType;
 import be.nabu.libs.types.api.TypedKeyValuePair;
+import be.nabu.libs.types.base.TypeBaseUtils;
 import be.nabu.libs.types.base.ValueImpl;
 import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.ForeignNameProperty;
@@ -961,9 +962,9 @@ public class Services {
 					// if we have restricted the field in our current type, we can still filter on it, we just need the correct binding
 					// this is especially necessary for CRUD as we started passing in the extension document (_with_ restrictions) so we can access foreign name fields
 					else {
-						String value = ValueUtils.getValue(RestrictProperty.getInstance(), type.getProperties());
-						if (value != null && type.getSuperType() != null) {
-							if (Arrays.asList(value.split("[\\s]*,[\\s]*")).contains(filter.getKey())) {
+						if (type.getSuperType() != null) {
+							List<String> restricted = TypeBaseUtils.getRestricted(type);
+							if (restricted.size() > 0 && restricted.contains(filter.getKey())) {
 								referencedElement = ((ComplexType) type.getSuperType()).get(filter.getKey());
 								if (referencedElement != null) {
 									containingType = type;
