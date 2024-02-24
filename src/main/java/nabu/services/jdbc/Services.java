@@ -62,6 +62,7 @@ import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.api.KeyValuePair;
 import be.nabu.libs.types.api.ModifiableElement;
 import be.nabu.libs.types.api.SimpleType;
+import be.nabu.libs.types.api.Type;
 import be.nabu.libs.types.api.TypedKeyValuePair;
 import be.nabu.libs.types.base.TypeBaseUtils;
 import be.nabu.libs.types.base.ValueImpl;
@@ -475,7 +476,7 @@ public class Services {
 			}
 			sql.append("\t" + child.getName());
 		}
-		String result = "insert into ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
+		String result = "insert into ~" + EAIRepositoryUtils.uncamelify(getName(type)) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
 		if (merge) {
 			if (idField == null) {
 				throw new IllegalStateException("Can only auto merge if a primary key field is present");
@@ -514,7 +515,7 @@ public class Services {
 		if (sql.toString().isEmpty()) {
 			return null;
 		}
-		return "update ~" + EAIRepositoryUtils.uncamelify(getName(type.getProperties())) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
+		return "update ~" + EAIRepositoryUtils.uncamelify(getName(type)) + " set\n" + sql.toString() + "\n where " + (idField == null ? "<query>" : EAIRepositoryUtils.uncamelify(idField) + " = :" + idField);
 	}
 	
 	@WebResult(name = "description")
@@ -522,14 +523,24 @@ public class Services {
 		ComplexType resolve = (ComplexType) DefinedTypeResolverFactory.getInstance().getResolver().resolve(typeId);
 		TypeDescription description = new TypeDescription();
 		description.setTypeName(resolve.getName());
-		description.setCollectionName(EAIRepositoryUtils.uncamelify(getName(resolve.getProperties())));
+		description.setCollectionName(EAIRepositoryUtils.uncamelify(getName(resolve)));
 		return description;
 	}
 	
-	private static String getName(Value<?>...properties) {
-		String value = ValueUtils.getValue(CollectionNameProperty.getInstance(), properties);
+	private static String getName(Type type) {
+		String value = ValueUtils.getValue(CollectionNameProperty.getInstance(), type.getProperties());
 		if (value == null) {
-			value = ValueUtils.getValue(NameProperty.getInstance(), properties);
+			Type search = type.getSuperType();
+			while (search != null) {
+				value = ValueUtils.getValue(CollectionNameProperty.getInstance(), search.getProperties());
+				search = search.getSuperType();
+				if (value != null) {
+					break;
+				}
+			}
+		}
+		if (value == null) {
+			value = ValueUtils.getValue(NameProperty.getInstance(), type.getProperties());
 		}
 		return value;
 	}
@@ -1460,7 +1471,7 @@ public class Services {
 				jdbc.setInputGenerated(false);
 				jdbc.setOutputGenerated(false);
 				jdbc.setParameters(unwrap(typeToDelete));
-				jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(typeToDelete.getProperties())) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = :" + primaryKey.getName());
+				jdbc.setSql("delete from ~" + EAIRepositoryUtils.uncamelify(getName(typeToDelete)) + " where " + EAIRepositoryUtils.uncamelify(primaryKey.getName()) + " = :" + primaryKey.getName());
 				ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
 				input.set(JDBCService.CONNECTION, connection);
 				input.set(JDBCService.TRANSACTION, transaction);
@@ -1495,7 +1506,7 @@ public class Services {
 				jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 				jdbc.setInputGenerated(true);
 				jdbc.setOutputGenerated(false);
-				String tableName = EAIRepositoryUtils.uncamelify(getName(typeToDelete.getProperties())).toLowerCase();
+				String tableName = EAIRepositoryUtils.uncamelify(getName(typeToDelete)).toLowerCase();
 				String keyName = EAIRepositoryUtils.uncamelify(primaryKey.getName());
 				jdbc.setSql("delete from ~" + tableName + " where " + keyName + " = :" + keyName);
 				ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
