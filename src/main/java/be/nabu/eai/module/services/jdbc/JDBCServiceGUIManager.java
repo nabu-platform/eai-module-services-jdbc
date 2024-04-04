@@ -121,7 +121,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					service.setDataSourceResolver(new RepositoryDataSourceResolver());
 					getArtifactManager().save(entry, service);
 					entry.getRepository().reload(target.itemProperty().get().getId());
-					controller.getRepositoryBrowser().refresh();
+					EAIDeveloperUtils.reload(entry.getId(), true);
+					//controller.getRepositoryBrowser().refresh();
 					
 					// reload
 					MainController.getInstance().getAsynchronousRemoteServer().reload(target.itemProperty().get().getId());
@@ -236,7 +237,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						// wipe the input so it can be rebuilt
 						service.setParameters(null);
 						getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
-						controller.getTree().refresh();
+						EAIDeveloperUtils.reload(entry.getId(), true);
+						//controller.getTree().refresh();
 						MainController.getInstance().setChanged();
 					}
 				}
@@ -248,7 +250,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						generateInsert.disableProperty().set(false);
 						generateUpdate.disableProperty().set(false);
 						getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
-						controller.getTree().refresh();
+						EAIDeveloperUtils.reload(entry.getId(), true);
+//						controller.getTree().refresh();
 						MainController.getInstance().setChanged();
 					}
 					else {
@@ -296,7 +299,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 						// wipe the output so it can be rebuilt
 						service.setResults(null);
 						getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
-						controller.getTree().refresh();
+//						controller.getTree().refresh();
+						EAIDeveloperUtils.reload(entry.getId(), true);
 						MainController.getInstance().setChanged();
 					}
 				}
@@ -308,7 +312,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 							service.setOutputGenerated(false);
 							generateSelect.disableProperty().set(false);
 							getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
-							controller.getTree().refresh();
+//							controller.getTree().refresh();
+							EAIDeveloperUtils.reload(entry.getId(), true);
 							MainController.getInstance().setChanged();
 						}
 						else {
@@ -430,7 +435,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				if (!arg2) {
 					controller.notify(service.setSql(editor.getContent()).toArray(new ValidationMessage[0]));
 					getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
-					controller.getTree().refresh();
+//					controller.getTree().refresh();
+					EAIDeveloperUtils.reload(entry.getId(), true);
 					input.getTreeCell(input.rootProperty().get()).refresh();
 					output.getTreeCell(output.rootProperty().get()).refresh();
 				}
@@ -470,7 +476,8 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 				if (!arg2) {
 					controller.notify(service.setSql(area.getText()).toArray(new ValidationMessage[0]));
 					getArtifactManager().refreshChildren((ModifiableEntry) entry, service);
-					controller.getTree().refresh();
+//					controller.getTree().refresh();
+					EAIDeveloperUtils.reload(entry.getId(), true);
 					input.getTreeCell(input.rootProperty().get()).refresh();
 					output.getTreeCell(output.rootProperty().get()).refresh();
 				}

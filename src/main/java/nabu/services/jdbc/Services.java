@@ -49,6 +49,7 @@ import be.nabu.libs.services.jdbc.api.ChangeTracker;
 import be.nabu.libs.services.jdbc.api.DataSourceWithAffixes;
 import be.nabu.libs.services.jdbc.api.DataSourceWithDialectProviderArtifact;
 import be.nabu.libs.services.jdbc.api.SQLDialect;
+import be.nabu.libs.services.jdbc.api.Statistic;
 import be.nabu.libs.services.jdbc.api.DataSourceWithAffixes.AffixMapping;
 import be.nabu.libs.services.pojo.POJOUtils;
 import be.nabu.libs.types.ComplexContentWrapperFactory;
@@ -741,7 +742,8 @@ public class Services {
 			(List<Object>) output.get(JDBCService.RESULTS), 
 			(Long) output.get(JDBCService.ROW_COUNT), 
 			(Long) output.get(JDBCService.TOTAL_ROW_COUNT), 
-			(Boolean) output.get(JDBCService.HAS_NEXT)
+			(Boolean) output.get(JDBCService.HAS_NEXT),
+			(List<Statistic>) output.get(JDBCService.STATISTICS)
 		);
 	}
 	
@@ -778,6 +780,7 @@ public class Services {
 			@WebParam(name = "offset") Long offset, 
 			@WebParam(name = "limit") Integer limit, 
 			@WebParam(name = "orderBy") List<String> orderBy, 
+			@WebParam(name = "statistics") List<String> statistics,
 			@WebParam(name = "totalRowCount") Boolean totalRowCount, 
 			@WebParam(name = "estimateRowCount") Boolean estimateRowCount,
 			@WebParam(name = "hasNext") Boolean hasNext,
@@ -787,7 +790,7 @@ public class Services {
 			@WebParam(name = "lazy") Boolean lazy,
 			@WebParam(name = "joins") List<JoinStatement> joins) throws ServiceException {
 		
-		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, estimateRowCount, hasNext, filters, language, executionContext, null, null, lazy, joins);
+		return selectFiltered(connection, transaction, typeId, offset, limit, orderBy, totalRowCount, estimateRowCount, hasNext, filters, language, executionContext, null, null, lazy, joins, statistics);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -807,7 +810,8 @@ public class Services {
 			List<String> groupBy,
 			String selection,
 			Boolean lazy,
-			List<JoinStatement> joins) throws ServiceException {
+			List<JoinStatement> joins,
+			List<String> statistics) throws ServiceException {
 		
 		String serviceId = typeId + ":generated.selectFiltered";
 		JDBCService jdbc = new JDBCService(serviceId);
@@ -1130,6 +1134,9 @@ public class Services {
 		input.set(JDBCService.INCLUDE_TOTAL_COUNT, totalRowCount);
 		input.set(JDBCService.INCLUDE_ESTIMATE_COUNT, estimateRowCount);
 		input.set(JDBCService.HAS_NEXT, hasNext);
+		if (statistics != null) {
+			input.set(JDBCService.STATISTICS, statistics);
+		}
 		if (lazy != null) {
 			input.set(JDBCService.LAZY, lazy);
 		}
@@ -1148,7 +1155,8 @@ public class Services {
 			(List<Object>) output.get(JDBCService.RESULTS), 
 			(Long) output.get(JDBCService.ROW_COUNT), 
 			(Long) output.get(JDBCService.TOTAL_ROW_COUNT), 
-			(Boolean) output.get(JDBCService.HAS_NEXT)
+			(Boolean) output.get(JDBCService.HAS_NEXT),
+			(List<Statistic>) output.get(JDBCService.STATISTICS)
 		);
 	}
 	
@@ -1280,7 +1288,8 @@ public class Services {
 			(List<Object>) output.get(JDBCService.RESULTS), 
 			(Long) output.get(JDBCService.ROW_COUNT), 
 			(Long) output.get(JDBCService.TOTAL_ROW_COUNT), 
-			(Boolean) output.get(JDBCService.HAS_NEXT)
+			(Boolean) output.get(JDBCService.HAS_NEXT),
+			(List<Statistic>) output.get(JDBCService.STATISTICS)
 		);
 	}
 	
@@ -1288,14 +1297,16 @@ public class Services {
 		private List<Object> results;
 		private Long rowCount, totalRowCount;
 		private Boolean hasNext;
+		private List<Statistic> statistics;
 		public JDBCSelectResult() {
 			// auto
 		}
-		public JDBCSelectResult(List<Object> results, Long rowCount, Long totalRowCount, Boolean hasNext) {
+		public JDBCSelectResult(List<Object> results, Long rowCount, Long totalRowCount, Boolean hasNext, List<Statistic> statistics) {
 			this.results = results;
 			this.rowCount = rowCount;
 			this.totalRowCount = totalRowCount;
 			this.hasNext = hasNext;
+			this.statistics = statistics;
 		}
 		public Long getTotalRowCount() {
 			return totalRowCount;
@@ -1320,6 +1331,12 @@ public class Services {
 		}
 		public void setResults(List<Object> results) {
 			this.results = results;
+		}
+		public List<Statistic> getStatistics() {
+			return statistics;
+		}
+		public void setStatistics(List<Statistic> statistics) {
+			this.statistics = statistics;
 		}
 	}
 	
