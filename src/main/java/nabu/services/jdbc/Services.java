@@ -67,10 +67,12 @@ import be.nabu.libs.types.api.Type;
 import be.nabu.libs.types.api.TypedKeyValuePair;
 import be.nabu.libs.types.base.TypeBaseUtils;
 import be.nabu.libs.types.base.ValueImpl;
+import be.nabu.libs.types.properties.AliasProperty;
 import be.nabu.libs.types.properties.CollectionNameProperty;
 import be.nabu.libs.types.properties.ForeignNameProperty;
 import be.nabu.libs.types.properties.GeneratedProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
+import be.nabu.libs.types.properties.LabelProperty;
 import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
 import be.nabu.libs.types.properties.NameProperty;
@@ -925,126 +927,7 @@ public class Services {
 		String sql = "select " + (useDistinct ? "distinct " : "") + (selection == null ? "*" : selection) + " from " + from.toString();
 		
 		if (filters != null && !filters.isEmpty()) {
-			String where = "";
-			int counter = 0;
-			boolean openOr = false;
-			for (int i = 0; i < filters.size(); i++) {
-				Filter filter = filters.get(i);
-				if (filter.getKey() == null) {
-					continue;
-				}
-				
-				if (skipFilter(filter)) {
-					continue;
-				}
-				
-				if (!where.isEmpty()) {
-					if (filter.isOr()) {
-						where += " or";
-					}
-					else {
-						where += " and";
-					}
-				}
-				// start the or
-				if (i < filters.size() - 1 && !openOr && filters.get(i + 1).isOr()) {
-					where += " (";
-					openOr = true;
-				}
-				
-				boolean inverse = inverseFilter(filter);
-				String operator = filter.getOperator();
-				if (inverse && operator.toLowerCase().equals("is null")) {
-					operator = "is not null";
-					inverse = false;
-				}
-				else if (inverse && operator.toLowerCase().equals("is not null")) {
-					operator = "is null";
-					inverse = false;
-				}
-				else if (inverse) {
-					where += " not(";
-				}
-				ComplexType containingType = null;
-				Element<?> referencedElement = null;
-				// we need to figure out which alias it belongs to so which table
-				for (ComplexType type : types) {
-					referencedElement = type.get(filter.getKey());
-					if (referencedElement != null) {
-						containingType = type;
-						break;
-					}
-					// if we have restricted the field in our current type, we can still filter on it, we just need the correct binding
-					// this is especially necessary for CRUD as we started passing in the extension document (_with_ restrictions) so we can access foreign name fields
-					else {
-						if (type.getSuperType() != null) {
-							List<String> restricted = TypeBaseUtils.getRestricted(type);
-							if (restricted.size() > 0 && restricted.contains(filter.getKey())) {
-								referencedElement = ((ComplexType) type.getSuperType()).get(filter.getKey());
-								if (referencedElement != null) {
-									containingType = type;
-									break;
-								}
-							}
-						}
-					}
-				}
-				if (containingType == null || referencedElement == null) {
-					throw new IllegalStateException("Could not find the complex type that contains the field: " + filter.getKey());
-				}
-				// we use the correct binding here and assume the JDBCService.expandSql will inject the correct bindings!
-				Value<String> property = referencedElement.getProperty(ForeignNameProperty.getInstance());
-				if (property != null && property.getValue() != null) {
-					List<String> foreignNameTables = JDBCUtils.getForeignNameTables(property.getValue());
-					List<String> foreignNameFields = JDBCUtils.getForeignNameFields(property.getValue());
-					if (filter.isCaseInsensitive()) {
-						where += " lower(" + foreignNameTables.get(foreignNameTables.size() - 1) + "." + JDBCServiceInstance.uncamelify(foreignNameFields.get(foreignNameFields.size() - 1)) + ")";
-					}
-					else {
-						where += " " + foreignNameTables.get(foreignNameTables.size() - 1) + "." + JDBCServiceInstance.uncamelify(foreignNameFields.get(foreignNameFields.size() - 1));
-					}
-				}
-				else {
-					if (filter.isCaseInsensitive()) {
-						where += " lower(" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
-					}
-					else {
-						where += " " + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey());
-					}
-				}
-				where += " " + operator;
-				if (filter.getValues() != null && !filter.getValues().isEmpty() && inputOperators.contains(operator)) {
-					if (filter.getValues().size() == 1) {
-						if (filter.isCaseInsensitive()) {
-							where += " lower(:input" + counter++ + ")";
-						}
-						else {
-							where += " :input" + counter++;
-						}
-					}
-					else {
-						if ("<>".equals(operator.trim())) {
-							where += " all(:input" + counter++ + ")";
-						}
-						else {
-							where += " any(:input" + counter++ + ")";
-						}
-					}
-				}
-				// close the not statement
-				if (inverse) {
-					where += ")";
-				}
-				// check if we want to close an or
-				if (i < filters.size() - 1 && openOr && !filters.get(i + 1).isOr()) {
-					where += ")";
-					openOr = false;
-				}
-			}
-			if (openOr) {
-				where += ")";
-				openOr = false;
-			}
+			String where = buildWhere(filters, types, names, statistics != null && !statistics.isEmpty());
 			// could be we skipped all filters!
 			if (!where.isEmpty()) {
 				sql += " where" + where;
@@ -1109,7 +992,12 @@ public class Services {
 						if (filter.getValues() != null && filter.getValues().size() >= 2) {
 							target.setProperty(new ValueImpl<Integer>(MaxOccursProperty.getInstance(), 0));
 						}
+						
 					}
+					// @2024-05-30: not ideal, the inputs are named using generic input and counter naming
+					// however for statistics we need to know which field the input operates on so we know which fields to unset to calculate a particular statistic
+					// we use the label property instead of the alias because the alias can have implications for marshalling etc, label should not (unless you are using excel marshalling and the like...)
+					target.setProperty(new ValueImpl<String>(LabelProperty.getInstance(), filter.getKey()));
 				}
 			}
 		}
@@ -1158,6 +1046,138 @@ public class Services {
 			(Boolean) output.get(JDBCService.HAS_NEXT),
 			(List<Statistic>) output.get(JDBCService.STATISTICS)
 		);
+	}
+
+	private static String buildWhere(List<Filter> filters, List<ComplexType> types, Map<ComplexType, String> names, boolean includeNullSupport) {
+		String where = "";
+		int counter = 0;
+		boolean openOr = false;
+		for (int i = 0; i < filters.size(); i++) {
+			Filter filter = filters.get(i);
+			if (filter.getKey() == null) {
+				continue;
+			}
+			
+			if (skipFilter(filter)) {
+				continue;
+			}
+			
+			if (!where.isEmpty()) {
+				if (filter.isOr()) {
+					where += " or";
+				}
+				else {
+					where += " and";
+				}
+			}
+			// start the or
+			if (i < filters.size() - 1 && !openOr && filters.get(i + 1).isOr()) {
+				where += " (";
+				openOr = true;
+			}
+			
+			boolean inverse = inverseFilter(filter);
+			String operator = filter.getOperator();
+			if (inverse && operator.toLowerCase().equals("is null")) {
+				operator = "is not null";
+				inverse = false;
+			}
+			else if (inverse && operator.toLowerCase().equals("is not null")) {
+				operator = "is null";
+				inverse = false;
+			}
+			else if (inverse) {
+				where += " not(";
+			}
+			ComplexType containingType = null;
+			Element<?> referencedElement = null;
+			// we need to figure out which alias it belongs to so which table
+			for (ComplexType type : types) {
+				referencedElement = type.get(filter.getKey());
+				if (referencedElement != null) {
+					containingType = type;
+					break;
+				}
+				// if we have restricted the field in our current type, we can still filter on it, we just need the correct binding
+				// this is especially necessary for CRUD as we started passing in the extension document (_with_ restrictions) so we can access foreign name fields
+				else {
+					if (type.getSuperType() != null) {
+						List<String> restricted = TypeBaseUtils.getRestricted(type);
+						if (restricted.size() > 0 && restricted.contains(filter.getKey())) {
+							referencedElement = ((ComplexType) type.getSuperType()).get(filter.getKey());
+							if (referencedElement != null) {
+								containingType = type;
+								break;
+							}
+						}
+					}
+				}
+			}
+			if (containingType == null || referencedElement == null) {
+				throw new IllegalStateException("Could not find the complex type that contains the field: " + filter.getKey());
+			}
+			
+			if (includeNullSupport && inputOperators.contains(operator)) {
+				where += " (:input" + counter + " is null or ";
+			}
+			
+			// we use the correct binding here and assume the JDBCService.expandSql will inject the correct bindings!
+			Value<String> property = referencedElement.getProperty(ForeignNameProperty.getInstance());
+			if (property != null && property.getValue() != null) {
+				List<String> foreignNameTables = JDBCUtils.getForeignNameTables(property.getValue());
+				List<String> foreignNameFields = JDBCUtils.getForeignNameFields(property.getValue());
+				if (filter.isCaseInsensitive()) {
+					where += " lower(" + foreignNameTables.get(foreignNameTables.size() - 1) + "." + JDBCServiceInstance.uncamelify(foreignNameFields.get(foreignNameFields.size() - 1)) + ")";
+				}
+				else {
+					where += " " + foreignNameTables.get(foreignNameTables.size() - 1) + "." + JDBCServiceInstance.uncamelify(foreignNameFields.get(foreignNameFields.size() - 1));
+				}
+			}
+			else {
+				if (filter.isCaseInsensitive()) {
+					where += " lower(" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + ")";
+				}
+				else {
+					where += " " + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey());
+				}
+			}
+			where += " " + operator;
+			if (filter.getValues() != null && !filter.getValues().isEmpty() && inputOperators.contains(operator)) {
+				if (filter.getValues().size() == 1) {
+					if (filter.isCaseInsensitive()) {
+						where += " lower(:input" + counter++ + ")";
+					}
+					else {
+						where += " :input" + counter++;
+					}
+				}
+				else {
+					if ("<>".equals(operator.trim())) {
+						where += " all(:input" + counter++ + ")";
+					}
+					else {
+						where += " any(:input" + counter++ + ")";
+					}
+				}
+			}
+			if (includeNullSupport && inputOperators.contains(operator)) {
+				where += ")";
+			}
+			// close the not statement
+			if (inverse) {
+				where += ")";
+			}
+			// check if we want to close an or
+			if (i < filters.size() - 1 && openOr && !filters.get(i + 1).isOr()) {
+				where += ")";
+				openOr = false;
+			}
+		}
+		if (openOr) {
+			where += ")";
+			openOr = false;
+		}
+		return where;
 	}
 	
 	public static String getTableName(ComplexType type) {

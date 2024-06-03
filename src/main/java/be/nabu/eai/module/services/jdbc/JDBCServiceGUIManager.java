@@ -72,6 +72,7 @@ import be.nabu.libs.types.properties.MaxOccursProperty;
 import be.nabu.libs.types.properties.MinOccursProperty;
 import be.nabu.libs.types.properties.PrimaryKeyProperty;
 import be.nabu.libs.types.properties.TimezoneProperty;
+import be.nabu.libs.types.properties.TranslatableProperty;
 import be.nabu.libs.validator.api.ValidationMessage;
 import be.nabu.libs.validator.api.ValidationMessage.Severity;
 
@@ -168,7 +169,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 		main.getItems().addAll(top, iface);
 
 		ElementSelectionListener elementSelectionListener = new ElementSelectionListener(controller, false, true, FormatProperty.getInstance(), TimezoneProperty.getInstance(), 
-			MinOccursProperty.getInstance(), MaxOccursProperty.getInstance(), PrimaryKeyProperty.getInstance(), CollectionNameProperty.getInstance());
+			MinOccursProperty.getInstance(), MaxOccursProperty.getInstance(), PrimaryKeyProperty.getInstance(), CollectionNameProperty.getInstance(), TranslatableProperty.getInstance());
 		elementSelectionListener.setForceAllowUpdate(true);
 		elementSelectionListener.setActualId(entry.getId());
 		
