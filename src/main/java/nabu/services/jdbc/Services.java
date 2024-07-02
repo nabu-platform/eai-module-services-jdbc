@@ -1448,7 +1448,9 @@ public class Services {
 			jdbc.setInputGenerated(false);
 			jdbc.setOutputGenerated(false);
 			jdbc.setParameters(unwrap(type));
-			jdbc.setSql(generateInsert(type, merge));
+			String generateInsert = generateInsert(type, merge);
+//			System.out.println("Generated insert " + id + " => " + generateInsert + " for " + instances +  " in " + group);
+			jdbc.setSql(generateInsert);
 			Element<?> primaryKey = null;
 			// let's get the primary key to see if we have a generated column
 			for (Element<?> child : TypeUtils.getAllChildren(type)) {
