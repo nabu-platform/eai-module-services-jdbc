@@ -278,7 +278,7 @@ public class Services {
 	
 	@WebResult(name = "inserts")
 	@SuppressWarnings("unchecked")
-	public List<String> buildInserts(@WebParam(name = "instances") List<Object> objects, @NotNull @WebParam(name = "dialect") String dialect) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
+	public List<String> buildInserts(@WebParam(name = "instances") List<Object> objects, @NotNull @WebParam(name = "dialect") String dialect, @WebParam(name = "compact") Boolean compact) throws InstantiationException, IllegalAccessException, ClassNotFoundException {
 		if (objects == null || objects.isEmpty()) {
 			return null;
 		}
@@ -290,7 +290,7 @@ public class Services {
 					object = ComplexContentWrapperFactory.getInstance().getWrapper().wrap(object);
 				}
 				if (object != null) {
-					inserts.add(result.buildInsertSQL((ComplexContent) object));
+					inserts.add(result.buildInsertSQL((ComplexContent) object, compact != null && compact));
 				}
 			}
 		}
