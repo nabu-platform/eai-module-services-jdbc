@@ -1165,11 +1165,11 @@ public class Services {
 			}
 			
 			if (includeNullSupport && inputOperators.contains(operator)) {
-				where += " (:input" + counter + " is null or ";
+				where += " (:input" + counter + " is null or";
 			}
 			
 			if (isDefaultValue) {
-				where += " (" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + " is null or ";
+				where += " (" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + " is null or";
 			}
 			
 			// we use the correct binding here and assume the JDBCService.expandSql will inject the correct bindings!
