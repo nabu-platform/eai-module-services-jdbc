@@ -82,10 +82,12 @@ import be.nabu.libs.types.api.ModifiableElement;
 import be.nabu.libs.types.api.SimpleType;
 import be.nabu.libs.types.api.Type;
 import be.nabu.libs.types.api.TypedKeyValuePair;
+import be.nabu.libs.types.api.Unmarshallable;
 import be.nabu.libs.types.base.TypeBaseUtils;
 import be.nabu.libs.types.base.ValueImpl;
 import be.nabu.libs.types.properties.AliasProperty;
 import be.nabu.libs.types.properties.CollectionNameProperty;
+import be.nabu.libs.types.properties.DefaultValueProperty;
 import be.nabu.libs.types.properties.ForeignNameProperty;
 import be.nabu.libs.types.properties.GeneratedProperty;
 import be.nabu.libs.types.properties.HiddenProperty;
@@ -1065,6 +1067,7 @@ public class Services {
 		);
 	}
 
+	@SuppressWarnings({ "rawtypes", "unchecked" })
 	private static String buildWhere(List<Filter> filters, List<ComplexType> types, Map<ComplexType, String> names, boolean includeNullSupport) {
 		String where = "";
 		int counter = 0;
@@ -1134,8 +1137,39 @@ public class Services {
 				throw new IllegalStateException("Could not find the complex type that contains the field: " + filter.getKey());
 			}
 			
+			boolean isDefaultValue = false;
+			// if you have "anonymized = false" as query but anonymized is actually an optional boolean with an agreed upon default value of false, the null values would not be returned as a result of the query
+			// so IF you set a default value on an OPTIONAL element, we insert a null check IF said default value is in the list of provided values AND the operator is =
+			// this is slightly different from includeNullSupport because this checks the values, not the field
+			if (filter.getValues() != null && !filter.getValues().isEmpty()) {
+				Integer minOccurs = ValueUtils.getValue(MinOccursProperty.getInstance(), referencedElement.getProperties());
+				if (operator.equals("=") && (minOccurs != null && minOccurs == 0)) {
+					Value<String> defaultValueProperty = referencedElement.getProperty(DefaultValueProperty.getInstance());
+					if (defaultValueProperty != null && defaultValueProperty.getValue() != null && !defaultValueProperty.getValue().trim().isEmpty()) {
+						Object defaultValueToCheck = defaultValueProperty.getValue().trim();
+						// need to cast the default value to whatever value the element is
+						if (referencedElement.getType() instanceof SimpleType) {
+							Class<?> instanceClass = ((SimpleType<?>) referencedElement.getType()).getInstanceClass();
+							if (!String.class.isAssignableFrom(instanceClass)) {
+								if (referencedElement.getType() instanceof Unmarshallable) {
+									Unmarshallable unmarshallable = ((Unmarshallable) referencedElement.getType());
+									defaultValueToCheck = unmarshallable.unmarshal(defaultValueToCheck.toString(), referencedElement.getProperties());
+								}
+							}
+						}
+						if (filter.getValues().contains(defaultValueToCheck)) {
+							isDefaultValue = true;
+						}
+					}
+				}
+			}
+			
 			if (includeNullSupport && inputOperators.contains(operator)) {
 				where += " (:input" + counter + " is null or ";
+			}
+			
+			if (isDefaultValue) {
+				where += " (" + names.get(containingType) + "." + JDBCServiceInstance.uncamelify(filter.getKey()) + " is null or ";
 			}
 			
 			// we use the correct binding here and assume the JDBCService.expandSql will inject the correct bindings!
@@ -1176,6 +1210,9 @@ public class Services {
 						where += " any(:input" + counter++ + ")";
 					}
 				}
+			}
+			if (isDefaultValue) {
+				where += ")";
 			}
 			if (includeNullSupport && inputOperators.contains(operator)) {
 				where += ")";
