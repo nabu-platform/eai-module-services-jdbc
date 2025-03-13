@@ -498,6 +498,9 @@ public class Services {
 			}
 			sql.append("\t" + child.getName());
 		}
+		if (sql.toString().isEmpty()) {
+			return null;
+		}
 		String result = "insert into ~" + EAIRepositoryUtils.uncamelify(getName(type)) + " (\n" + EAIRepositoryUtils.uncamelify(sql.toString()) + "\n) values (\n" + sql.toString().replaceAll("([\\w]+)", ":$1") + "\n)";
 		if (merge) {
 			if (idField == null) {
@@ -1503,6 +1506,9 @@ public class Services {
 			jdbc.setOutputGenerated(false);
 			jdbc.setParameters(unwrap(type));
 			String generateInsert = generateInsert(type, merge);
+			if (generateInsert == null) {
+				continue;
+			}
 //			System.out.println("Generated insert " + id + " => " + generateInsert + " for " + instances +  " in " + group);
 			jdbc.setSql(generateInsert);
 			Element<?> primaryKey = null;
