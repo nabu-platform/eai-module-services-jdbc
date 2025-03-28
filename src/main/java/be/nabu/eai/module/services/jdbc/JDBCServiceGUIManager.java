@@ -136,6 +136,7 @@ public class JDBCServiceGUIManager implements ArtifactGUIManager<JDBCService> {
 					String name = updater.getValue("Name");
 					RepositoryEntry entry = ((RepositoryEntry) target.itemProperty().get()).createNode(name, getArtifactManager(), true);
 					JDBCService service = new JDBCService(entry.getId());
+					service.setExecutionContextProvider(controller.getRepository());
 					service.setDataSourceResolver(new RepositoryDataSourceResolver());
 					getArtifactManager().save(entry, service);
 					entry.getRepository().reload(target.itemProperty().get().getId());

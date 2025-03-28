@@ -708,6 +708,7 @@ public class Services {
 		
 		String serviceId = typeId + ":generated.select" + (idField == null ? "" : "ById");
 		JDBCService jdbc = new JDBCService(serviceId);
+		jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
 		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 		jdbc.setInputGenerated(true);
 		jdbc.setOutputGenerated(false);
@@ -839,6 +840,7 @@ public class Services {
 		
 		String serviceId = typeId + ":generated.selectFiltered";
 		JDBCService jdbc = new JDBCService(serviceId);
+		jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
 		RepositoryDataSourceResolver dataSourceResolver = new RepositoryDataSourceResolver();
 		jdbc.setDataSourceResolver(dataSourceResolver);
 		jdbc.setInputGenerated(true);
@@ -1265,6 +1267,7 @@ public class Services {
 			@WebParam(name = "typeAsHint") Boolean typeIdAsHint) throws ServiceException {
 		String serviceId = typeId + ":generated.selectDynamic";
 		JDBCService jdbc = new JDBCService(serviceId);
+		jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
 		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 		jdbc.setInputGenerated(true);
 		jdbc.setOutputGenerated(typeId == null || (typeIdAsHint != null && typeIdAsHint));
@@ -1434,6 +1437,7 @@ public class Services {
 			String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
 			id += ":generated.update";
 			JDBCService jdbc = new JDBCService(id);
+			jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
 			jdbc.setChangeTracker(toChangeTracker(changeTracker));
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
@@ -1500,6 +1504,7 @@ public class Services {
 				throw new ServiceException("JDBC-DYN-1", "Could not figure out the correct jdbc connection to use");
 			}
 			JDBCService jdbc = new JDBCService(id);
+			jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
 			jdbc.setChangeTracker(toChangeTracker(changeTracker));
 			jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 			jdbc.setInputGenerated(false);
@@ -1565,6 +1570,7 @@ public class Services {
 				String id = typeToDelete instanceof DefinedType ? ((DefinedType) typeToDelete).getId() : "$anonymous";
 				id += ":generated.delete";
 				JDBCService jdbc = new JDBCService(id);
+				jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
 				jdbc.setChangeTracker(toChangeTracker(changeTracker));
 				jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 				jdbc.setInputGenerated(false);
@@ -1601,6 +1607,7 @@ public class Services {
 				String id = type instanceof DefinedType ? ((DefinedType) type).getId() : "$anonymous";
 				id += ":generated.deleteById";
 				JDBCService jdbc = new JDBCService(id);
+				jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
 				jdbc.setChangeTracker(toChangeTracker(changeTracker));
 				jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
 				jdbc.setInputGenerated(true);

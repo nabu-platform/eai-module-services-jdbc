@@ -86,6 +86,7 @@ public class JDBCServiceManager implements ArtifactManager<JDBCService>, Artifac
 	@Override
 	public JDBCService load(ResourceEntry entry, List<Validation<?>> messages) throws IOException, ParseException {
 		JDBCService service = new JDBCService(entry.getId());
+		service.setExecutionContextProvider(entry.getRepository());
 		service.setDataSourceResolver(new RepositoryDataSourceResolver());
 		Resource resource = entry.getContainer().getChild("jdbcservice.xml");
 		if (resource == null) {
