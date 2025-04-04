@@ -42,5 +42,10 @@
 			<groupId>be.nabu.libs.services</groupId>
 			<artifactId>services-jdbc</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>be.nabu.libs.tracer</groupId>
+			<artifactId>tracer-api</artifactId>
+			<scope>provided</scope>
+		</dependency>
 	</dependencies>
 </project>
