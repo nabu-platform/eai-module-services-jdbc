@@ -867,6 +867,9 @@ public class Services {
 		Map<String, List<JoinStatement>> joinsToUse = new HashMap<String, List<JoinStatement>>();
 		if (joins != null) {
 			for (JoinStatement statement : joins) {
+				if (statement == null) {
+					continue;
+				}
 				if (!joinsToUse.containsKey(statement.getSourceJoin())) {
 					joinsToUse.put(statement.getSourceJoin(), new ArrayList<JoinStatement>());
 				}
