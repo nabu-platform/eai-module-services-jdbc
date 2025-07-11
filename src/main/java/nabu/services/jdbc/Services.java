@@ -1254,6 +1254,53 @@ public class Services {
 		return tableName;
 	}
 	
+	public void executeDynamic(@WebParam(name = "connection") String connection, 
+			@WebParam(name = "transaction") String transaction,
+			@WebParam(name = "sql") String sql,
+			@WebParam(name = "instances") List<Object> instances,
+			@WebParam(name = "language") String language) throws ServiceException {
+		String serviceId = "generated.runDynamic";
+		JDBCService jdbc = new JDBCService(serviceId);
+		jdbc.setExecutionContextProvider(EAIResourceRepository.getInstance());
+		jdbc.setDataSourceResolver(new RepositoryDataSourceResolver());
+		jdbc.setOutputGenerated(true);
+		List<ComplexContent> contents = new ArrayList<ComplexContent>();
+		if (instances != null && !instances.isEmpty()) {
+			for (Object instance : instances) {
+				if (instance == null) {
+					continue;
+				}
+				ComplexContent content = instance instanceof ComplexContent ? (ComplexContent) instance : ComplexContentWrapperFactory.getInstance().getWrapper().wrap(instance);
+				if (content == null) {
+					throw new IllegalArgumentException("Can not cast to complex content: " + instance);
+				}
+				contents.add(content);
+			}
+		}
+		if (contents.isEmpty()) {
+			jdbc.setInputGenerated(true);
+		}
+		else {
+			jdbc.setParameters(contents.get(0).getType());
+		}
+		// triggers generation of input/output
+		jdbc.setSql(sql);
+		
+		ComplexContent input = jdbc.getServiceInterface().getInputDefinition().newInstance();
+		input.set(JDBCService.CONNECTION, connection);
+		input.set(JDBCService.TRANSACTION, transaction);
+		if (!contents.isEmpty()) {
+			input.set(JDBCService.PARAMETERS, contents);
+		}
+		
+		if (language != null && jdbc.getServiceInterface().getInputDefinition().get("language") != null) {
+			input.set("language", language);
+		}
+		
+		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
+		runtime.run(input);
+	}
+	
 	@SuppressWarnings("unchecked")
 	public JDBCSelectResult selectDynamic(@WebParam(name = "connection") String connection, 
 			@WebParam(name = "transaction") String transaction, 
