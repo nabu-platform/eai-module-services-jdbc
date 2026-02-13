@@ -1010,6 +1010,7 @@ public class Services {
 					if (source != null && target != null) {
 						((ModifiableElement<?>) target).setType(source.getType());
 						Value<?>[] properties = source.getProperties();
+						// we need timezone information and potentially date formatting rules etc to determine granularity
 						for (Value<?> value : properties) {
 							if (!value.getProperty().getName().equals("name")) {
 								((ModifiableElement<?>) target).setProperty(value);
@@ -1060,8 +1061,16 @@ public class Services {
 			input.set("language", language);
 		}
 		
+		// @2026-01-26: there is an issue that if you for instance add patterns etc on fields, they are enforced in the select
+		// this is "ok" if you are doing equals etc, however this is no longer ok if you are doing stuff with "like"
+		// even when comparing you might want to go outside of boundaries, suppose you have an integer constrained [0,100], it is valid to select all ints < 101. but this would be blocked by the validation
+		// if you have an enumeration of ["a", "b"] it is valid to try and select "c", it shouldnt return anything but its a valid question.
+		// we need _some_ metadata properties to influence how parameters are set (e.g. timezone)
+		// we cant easily tell which metadata properties are too restrictive vis-a-vis the operator they are used in.
+		// so for now we disable validation
+		
 		// make sure we validate the input
-		jdbc.setValidateInput(true);
+//		jdbc.setValidateInput(true);
 		
 		ServiceRuntime runtime = new ServiceRuntime(jdbc, executionContext);
 		ComplexContent output = runtime.run(input);
