@@ -2,11 +2,14 @@ package be.nabu.eai.module.services.jdbc;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
@@ -15,6 +18,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import be.nabu.eai.module.types.structure.StructureManager;
 import be.nabu.eai.repository.EAIRepositoryUtils;
 import be.nabu.eai.repository.EAIResourceRepository;
 import be.nabu.eai.repository.api.CreatableArtifactFragmentManager;
@@ -30,9 +34,12 @@ import be.nabu.libs.types.api.ComplexType;
 import be.nabu.libs.types.api.DefinedType;
 import be.nabu.libs.types.binding.api.Window;
 import be.nabu.libs.types.binding.xml.XMLBinding;
+import be.nabu.libs.types.definition.xml.XMLDefinitionMarshaller;
 import be.nabu.libs.types.java.BeanInstance;
 import be.nabu.libs.services.pojo.POJOUtils;
 import be.nabu.libs.types.java.BeanResolver;
+import be.nabu.libs.types.structure.DefinedStructure;
+import be.nabu.libs.types.structure.Structure;
 import be.nabu.libs.validator.api.Validation;
 import be.nabu.libs.validator.api.ValidationMessage;
 
@@ -40,10 +47,13 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 
 	private static final String JDBC_SERVICE_PATH = "jdbc-service.xml";
 	private static final String QUERY_PATH = "query.sql";
+	private static final String PARAMETERS_PATH = "parameters.xml";
+	private static final String RESULTS_PATH = "results.xml";
 	private static final String ARTIFACT_RESOURCE_PATH = "jdbcservice.xml";
 	private static final String XML_CONTENT_TYPE = "application/xml";
 	private static final String SQL_CONTENT_TYPE = "application/sql";
 	private static final String ARTIFACT_TYPE = "jdbcService";
+	private static final String STRUCTURE_FRAGMENT_TYPE = "structure";
 	private static final String ARTIFACT_CATEGORY = "service";
 	private static final String GUIDELINES_PATH = "/guidelines/jdbc-service.md";
 	private static final String CHANGE_TRACKER_INTERFACE = "be.nabu.libs.services.jdbc.api.ChangeTracker.track";
@@ -163,12 +173,18 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 				return getFragmentLastModified(artifact.getId(), ARTIFACT_RESOURCE_PATH);
 			}
 		});
+		if (artifact.isInputGenerated()) {
+			fragments.add(new GeneratedStructureFragment(artifact, PARAMETERS_PATH, artifact.getParameters()));
+		}
+		if (artifact.isOutputGenerated()) {
+			fragments.add(new GeneratedStructureFragment(artifact, RESULTS_PATH, artifact.getResults()));
+		}
 		return fragments;
 	}
 
 	@Override
 	public List<Validation<?>> updateFragment(JDBCService artifact, String path, String oldContent, String newContent) {
-		if (!JDBC_SERVICE_PATH.equals(path) && !QUERY_PATH.equals(path)) {
+		if (!JDBC_SERVICE_PATH.equals(path) && !QUERY_PATH.equals(path) && !PARAMETERS_PATH.equals(path) && !RESULTS_PATH.equals(path)) {
 			return super.updateFragment(artifact, path, oldContent, newContent);
 		}
 		ResourceEntry entry = (ResourceEntry) EAIResourceRepository.getInstance().getEntry(artifact.getId());
@@ -178,8 +194,11 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 			if (QUERY_PATH.equals(path)) {
 				validations.addAll(candidate.setSql(newContent));
 			}
-			else {
+			else if (JDBC_SERVICE_PATH.equals(path)) {
 				applyConfigurationFragment(candidate, newContent, validations);
+			}
+			else {
+				applyGeneratedStructureFragment(entry, candidate, path, newContent, validations);
 			}
 			if (!hasErrors(validations)) {
 				validations.addAll(new JDBCServiceManager().save(entry, candidate));
@@ -189,6 +208,117 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 			validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, e.getMessage() == null ? e.getClass().getName() : e.getMessage()));
 		}
 		return validations;
+	}
+
+	private void applyGeneratedStructureFragment(ResourceEntry entry, JDBCService artifact, String path, String content, List<Validation<?>> validations) throws Exception {
+		if (PARAMETERS_PATH.equals(path) && !artifact.isInputGenerated()) {
+			validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "The parameters.xml fragment can only be updated when the input is generated"));
+			return;
+		}
+		if (RESULTS_PATH.equals(path) && !artifact.isOutputGenerated()) {
+			validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "The results.xml fragment can only be updated when the output is generated"));
+			return;
+		}
+		ComplexType currentType = PARAMETERS_PATH.equals(path) ? artifact.getParameters() : artifact.getResults();
+		if (!(currentType instanceof Structure)) {
+			validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "Generated JDBC structures must be editable structures"));
+			return;
+		}
+		Set<String> currentFields = getFieldNames(currentType);
+		Structure updated = StructureManager.parseUpdatedStructure(entry, content, (Structure) currentType, new DefinedStructure(), validations);
+		if (currentType instanceof DefinedType && updated instanceof DefinedStructure) {
+			((DefinedStructure) updated).setId(((DefinedType) currentType).getId());
+		}
+		updated.setName(currentType.getName(currentType.getProperties()));
+		if (!currentFields.equals(getFieldNames(updated))) {
+			validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "Generated JDBC structure fragments may only adapt existing fields; adding or removing fields is not allowed"));
+			return;
+		}
+		if (PARAMETERS_PATH.equals(path)) {
+			artifact.setParameters(updated);
+			artifact.setInputGenerated(true);
+		}
+		else {
+			artifact.setResults(updated);
+			artifact.setOutputGenerated(true);
+		}
+	}
+
+	private Set<String> getFieldNames(ComplexType type) {
+		Set<String> fields = new LinkedHashSet<String>();
+		for (be.nabu.libs.types.api.Element<?> element : type) {
+			if (element != null) {
+				fields.add(element.getName());
+			}
+		}
+		return fields;
+	}
+
+	private class GeneratedStructureFragment implements ArtifactFragment {
+
+		private JDBCService artifact;
+		private String path;
+		private ComplexType type;
+
+		public GeneratedStructureFragment(JDBCService artifact, String path, ComplexType type) {
+			this.artifact = artifact;
+			this.path = path;
+			this.type = type;
+		}
+
+		@Override
+		public boolean isEditable() {
+			return EAIResourceRepository.getInstance().getEntry(artifact.getId()) instanceof ResourceEntry;
+		}
+
+		@Override
+		public boolean isRemovable() {
+			return false;
+		}
+
+		@Override
+		public String getPath() {
+			return path;
+		}
+
+		@Override
+		public String getContent() {
+			XMLDefinitionMarshaller marshaller = new XMLDefinitionMarshaller();
+			marshaller.setIgnoreUnknownSuperTypes(true);
+			ByteArrayOutputStream output = new ByteArrayOutputStream();
+			try {
+				marshaller.marshal(output, type);
+				return new String(output.toByteArray(), StandardCharsets.UTF_8);
+			}
+			catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		}
+
+		@Override
+		public String getContentType() {
+			return XML_CONTENT_TYPE;
+		}
+
+		@Override
+		public String getArtifactId() {
+			return artifact.getId();
+		}
+
+		@Override
+		public String getFragmentType() {
+			return STRUCTURE_FRAGMENT_TYPE;
+		}
+
+		@Override
+		public Map<String, String> getProperties() {
+			return new LinkedHashMap<String, String>();
+		}
+
+		@Override
+		public Long getLastModified() {
+			return getFragmentLastModified(artifact.getId(), path);
+		}
 	}
 
 	@Override
@@ -305,6 +435,7 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 		copy.setValidateOutput(artifact.getValidateOutput());
 		copy.setChangeTracker(artifact.getChangeTracker());
 		if (artifact.isInputGenerated()) {
+			copy.setParameters(artifact.getParameters());
 			copy.setInputGenerated(true);
 		}
 		else {
@@ -312,6 +443,7 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 			copy.setInputGenerated(false);
 		}
 		if (artifact.isOutputGenerated()) {
+			copy.setResults(artifact.getResults());
 			copy.setOutputGenerated(true);
 		}
 		else {

@@ -62,6 +62,11 @@ If `inputDefinition` is omitted, the JDBC service generates its own input struct
 If `outputDefinition` is omitted, the JDBC service generates its own output structure from `query.sql`.
 Only set `inputDefinition` or `outputDefinition` when you want to override the generated structures with explicit types.
 
+Generated input parameters are available under the child `parameters`, not directly at the root of the input. The definition of `parameters` exists as a fragment `parameters.xml` IF the input is generated.
+The results are available in `results` and the generated structure (if any) is available in `results.xml`.
+
+Make sure to update `parameters.xml` and `results.xml` to match the correct types if they are being generated.
+
 ## query.sql
 
 `query.sql` contains the raw SQL only. Example:
