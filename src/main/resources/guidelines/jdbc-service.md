@@ -78,3 +78,8 @@ select
 from customers
 where status = :status
 ```
+
+## limit/offset
+
+Limit and offset should NOT be hardcoded into the sql because we want to keep the flexibility to change it.
+Use the limit/offset in the input of the service instead.
