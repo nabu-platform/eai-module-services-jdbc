@@ -79,7 +79,8 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 		fragments.add(new ArtifactFragment() {
 			@Override
 			public boolean isEditable() {
-				return EAIResourceRepository.getInstance().getEntry(artifact.getId()) instanceof ResourceEntry;
+				Entry entry = EAIResourceRepository.getInstance().getEntry(artifact.getId());
+				return entry instanceof ResourceEntry && entry.isEditable();
 			}
 
 			@Override
@@ -130,7 +131,8 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 		fragments.add(new ArtifactFragment() {
 			@Override
 			public boolean isEditable() {
-				return EAIResourceRepository.getInstance().getEntry(artifact.getId()) instanceof ResourceEntry;
+				Entry entry = EAIResourceRepository.getInstance().getEntry(artifact.getId());
+				return entry instanceof ResourceEntry && entry.isEditable();
 			}
 
 			@Override
@@ -268,7 +270,8 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 
 		@Override
 		public boolean isEditable() {
-			return EAIResourceRepository.getInstance().getEntry(artifact.getId()) instanceof ResourceEntry;
+			Entry entry = EAIResourceRepository.getInstance().getEntry(artifact.getId());
+			return entry instanceof ResourceEntry && entry.isEditable();
 		}
 
 		@Override
