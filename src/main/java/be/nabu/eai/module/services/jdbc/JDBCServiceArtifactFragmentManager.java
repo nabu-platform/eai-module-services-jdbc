@@ -400,26 +400,36 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 			artifact.setChangeTracker(JDBCServiceManager.getAsChangeTracker(entryRepository(artifact), config.getChangeTrackerId()));
 		}
 		if (config.getInputDefinition() != null) {
-			Object resolved = entryRepository(artifact).resolve(config.getInputDefinition());
-			if (!(resolved instanceof ComplexType)) {
-				validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "Could not find referenced input definition: " + config.getInputDefinition()));
+			if (config.getInputDefinition().equals(artifact.getId() + "." + JDBCService.PARAMETERS)) {
+				validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "The generated JDBC parameters type can not be used as a fixed input definition"));
 			}
 			else {
-				artifact.setParameters((ComplexType) resolved);
-				artifact.setInputGenerated(false);
+				Object resolved = entryRepository(artifact).resolve(config.getInputDefinition());
+				if (!(resolved instanceof ComplexType)) {
+					validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "Could not find referenced input definition: " + config.getInputDefinition()));
+				}
+				else {
+					artifact.setParameters((ComplexType) resolved);
+					artifact.setInputGenerated(false);
+				}
 			}
 		}
 		else {
 			artifact.setInputGenerated(true);
 		}
 		if (config.getOutputDefinition() != null) {
-			Object resolved = entryRepository(artifact).resolve(config.getOutputDefinition());
-			if (!(resolved instanceof ComplexType)) {
-				validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "Could not find referenced output definition: " + config.getOutputDefinition()));
+			if (config.getOutputDefinition().equals(artifact.getId() + "." + JDBCService.RESULTS)) {
+				validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "The generated JDBC results type can not be used as a fixed output definition"));
 			}
 			else {
-				artifact.setResults((ComplexType) resolved);
-				artifact.setOutputGenerated(false);
+				Object resolved = entryRepository(artifact).resolve(config.getOutputDefinition());
+				if (!(resolved instanceof ComplexType)) {
+					validations.add(new ValidationMessage(ValidationMessage.Severity.ERROR, "Could not find referenced output definition: " + config.getOutputDefinition()));
+				}
+				else {
+					artifact.setResults((ComplexType) resolved);
+					artifact.setOutputGenerated(false);
+				}
 			}
 		}
 		else {
