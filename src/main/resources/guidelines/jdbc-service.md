@@ -61,7 +61,8 @@ If there is no prefix at runtime, it just becomes `tasks` but if there is a pref
 
 If `inputDefinition` is omitted, the JDBC service generates its own input structure from `query.sql`.
 If `outputDefinition` is omitted, the JDBC service generates its own output structure from `query.sql`.
-Only set `inputDefinition` or `outputDefinition` when you want to override the generated structures with explicit types.
+When using generated inputs or outputs, you must **FIRST** set the SQL. The input/output will be generated based on that SQL and you can only modify them once they have been created.
+Only set `inputDefinition` or `outputDefinition` when you want to override the generated structure fields with explicit scalar types.
 
 IF the input is generated, the input structure is available under the fragment `parameters.xml` .
 IF the output is generated, the output structure is available under the fragment `results.xml`.
