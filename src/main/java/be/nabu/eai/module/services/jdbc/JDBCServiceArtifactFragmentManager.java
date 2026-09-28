@@ -185,6 +185,20 @@ public class JDBCServiceArtifactFragmentManager extends DefinedServiceArtifactFr
 	}
 
 	@Override
+	public ArtifactFragment resolveFragmentAlias(JDBCService artifact, String requestedArtifactId, String requestedPath) {
+		if (!"structure.xml".equals(requestedPath)) {
+			return null;
+		}
+		if ((artifact.getId() + ".parameters").equals(requestedArtifactId)) {
+			return new GeneratedStructureFragment(artifact, PARAMETERS_PATH, artifact.getParameters());
+		}
+		if ((artifact.getId() + ".results").equals(requestedArtifactId)) {
+			return new GeneratedStructureFragment(artifact, RESULTS_PATH, artifact.getResults());
+		}
+		return null;
+	}
+
+	@Override
 	public List<Validation<?>> updateFragment(JDBCService artifact, String path, String oldContent, String newContent) {
 		if (!JDBC_SERVICE_PATH.equals(path) && !QUERY_PATH.equals(path) && !PARAMETERS_PATH.equals(path) && !RESULTS_PATH.equals(path)) {
 			return super.updateFragment(artifact, path, oldContent, newContent);
